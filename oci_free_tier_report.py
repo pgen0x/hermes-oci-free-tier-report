@@ -9,6 +9,7 @@ Usage:
   oci_free_tier_report.py                 # report
   oci_free_tier_report.py --check         # preflight: auth + IAM permission probe + setup hints
   oci_free_tier_report.py --format markdown|mono|plain|json
+  oci_free_tier_report.py --list-locales | --dump-locale | --check-locale <code>
 
 Settings come from environment variables, or from `oci_free_tier_report.conf` (KEY=VALUE lines)
 next to this script — install.sh writes that file. Environment variables win.
@@ -21,6 +22,7 @@ next to this script — install.sh writes that file. Environment variables win.
                   json               machine-readable
   REPORT_ASCII    1 = status words (OK/WARN/HIGH/OVER) instead of emoji
   REPORT_TZ       IANA timezone for the header (default: system local time)
+  REPORT_LANG     report language: en (default), id, or any locales/<code>.json; missing keys fall back to en
   REPORT_QUIET    1 = print nothing when everything is OK (alerts-only mode)
   REPORT_DEBUG    1 = tracebacks on stderr
   OCI_AUTH        instance_principal (default) | config (unsupported fallback, untested)
@@ -49,10 +51,12 @@ import os
 import sys
 import traceback
 import urllib.request
+import re
+import string
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 
 def load_conf() -> None:
@@ -103,6 +107,213 @@ STATUS_ASCII = {"ok": "OK", "warn": "WARN", "high": "HIGH", "over": "OVER", "inf
 MONO_MAX_WIDTH = 34  # monospace table width budget (excluding the status icon) — fits a phone screen
 
 
+# ---------------------------------------------------------------- i18n
+# English is the source of truth and lives here so the script works as a single file.
+# Other languages: locales/<code>.json with the same keys (`--dump-locale` prints this dict as JSON).
+# Values are str.format templates; keep every {placeholder}. Never translate OCI identifiers
+# (shape names, OCPU, GB-h, IAM policy statements, Console menu paths stay as Oracle shows them).
+EN: dict[str, str] = {
+    "_language": "English",
+    "num.thousands": ",",
+    "num.decimal": ".",
+    "date.weekdays": "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+    "date.months": "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
+    "date.format": "{weekday} {day} {month} {year}",
+    "title": "OCI Always Free · {date}",
+    "header.alerts": "{n} alert(s)",
+    "header.incomplete": "Some checks failed — status incomplete",
+    "header.ok": "All within Always Free — cost 0",
+    "notes.title": "Notes",
+    "legend.ok": "<70%",
+    "legend.warn": "70-90%",
+    "legend.high": "≥90%",
+    "legend.over": "over",
+    "col.status": "Status",
+    "col.used": "Used",
+    "col.limit": "Limit",
+    "col.amount": "Amount",
+    "col.proj": "Proj.",
+    "col.cpu": "CPU %",
+    "col.ram": "RAM %",
+    "sec.cost": "Cost",
+    "sec.cost_currency": "Cost ({currency})",
+    "sec.compute": "Compute",
+    "sec.a1_hours": "A1 hours",
+    "sec.storage": "Storage",
+    "sec.network": "Network",
+    "sec.idle": "Idle",
+    "sec.idle_col": "Idle 7d p95",
+    "sec.other": "Other",
+    "row.yesterday": "Yesterday",
+    "row.mtd": "Month to date",
+    "row.a1_ocpu": "A1 OCPU",
+    "row.a1_ram": "A1 RAM (GB)",
+    "row.micro": "E2.1.Micro VMs",
+    "row.ocpu_h": "OCPU-h",
+    "row.gb_h": "GB-h",
+    "row.block": "Block+boot (GB)",
+    "row.backups": "Volume backups",
+    "row.object": "Object (GB)",
+    "row.egress": "Egress MTD (GB)",
+    "row.no_vm": "no running VM",
+    "row.lb": "Load balancers",
+    "row.nlb": "Network LBs",
+    "row.adb": "Autonomous DBs",
+    "row.adb_paid": "Paid ADBs",
+    "alert.paid_shape": "Instance '{name}' uses paid shape {shape}.",
+    "alert.a1_over": "Live A1 capacity exceeds 4 OCPU / 24 GB.",
+    "alert.micro_over": "More than 2 E2.1.Micro instances.",
+    "alert.charged": "You were charged {amount} {currency} this month — something is outside Always Free!",
+    "alert.a1_hours_over": "A1 {unit} projected to exceed the monthly free quota.",
+    "alert.storage_over": "Block storage or backups exceed the Always Free limit.",
+    "alert.object_over": "Object Storage exceeds 20 GB.",
+    "alert.egress_over": "Outbound data transfer exceeds 10 TB this month.",
+    "alert.idle": "'{name}' is idle by Oracle's rule (7-day p95 < 20%) — Free Tier accounts may get it reclaimed.",
+    "alert.adb_paid": "{n} Autonomous Database(s) are not Always Free.",
+    "alert.other_over": "Load balancer / NLB / Autonomous DB count exceeds the free limit.",
+    "note.compute.over": "Running A1 capacity ({ocpu} OCPU / {mem} GB) is above the free 4 OCPU / 24 GB — the extra is billed. Shrink or stop an A1 instance.",
+    "note.compute.at_cap": "A1 is at the free cap ({ocpu} OCPU / {mem} GB) — still free, but any new or bigger A1 instance would be billed.",
+    "note.compute.ok": "A1 uses {ocpu} of 4 OCPU and {mem} of 24 GB — {free_ocpu} OCPU / {free_mem} GB still free to use.",
+    "note.compute.micro": "{n} of 2 free E2.1.Micro VMs in use.",
+    "note.cost.charged": "Something billable is running — the rows above show which service is charging you.",
+    "note.cost.ok": "Billed cost from Oracle's Usage API (data lags a few hours). 0.00 means you are not paying anything.",
+    "note.a1_hours": "Free monthly quota: 3,000 OCPU-h + 18,000 GB-h. Used so far {used} OCPU-h; at the current size the month ends at ~{projected}. A 4 OCPU / 24 GB A1 running 24/7 needs at most {max} OCPU-h this month, so it never runs over. Resets on the 1st.",
+    "note.storage.over": "Volumes total {total} GB, {over} GB over the free 200 GB — delete or shrink a volume.",
+    "note.storage.full": "Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume.",
+    "note.storage.ok": "{left} GB of the free 200 GB block storage still available.",
+    "note.storage.backups": "{n} volume backups — only 5 are free, delete the oldest.",
+    "note.storage.object": "Object Storage holds {gb} GB — only 20 GB is free.",
+    "note.network": "Outbound traffic this month: {gb} GB of the free 10 TB ({pct}%). Counted from VNIC metrics, so slightly overstated.",
+    "note.idle.rule": "Oracle may reclaim an Always Free VM (Free Tier accounts) when its 7-day p95 CPU is under 20% and, on A1, RAM is also under 20%.",
+    "note.idle.no_metrics": "{name}: no metrics — enable the Oracle Cloud Agent monitoring plugin.",
+    "note.idle.risk": "{name}: CPU {cpu}% and RAM {ram}% are both under 20% → at risk of reclaim.",
+    "note.idle.safe_cpu": "{name}: CPU {cpu}% ({cpu_side} 20%) → safe.",
+    "note.idle.safe_cpu_ram": "{name}: CPU {cpu}% ({cpu_side} 20%), RAM {ram}% ({ram_side} 20%) → safe.",
+    "note.idle.below": "below",
+    "note.idle.above": "above",
+    "note.other.free": "Free: 1 load balancer (10 Mbps), 1 network LB, 2 Autonomous DBs.",
+    "note.other.in_use": "In use: {items}.",
+    "note.other.none": "None in use.",
+    "note.other.lb": "{n} load balancer",
+    "note.other.nlb": "{n} network LB",
+    "note.other.adb": "{n} free Autonomous DB",
+    "err.iam_hint": "(missing IAM policy?)",
+    "setup.headline": "Oracle permissions are not set up yet",
+    "setup.explain": "this VM can sign in to OCI but is not allowed to read usage, so no checks could run.",
+    "setup.intro": "One-time setup in the OCI Console (free, read-only), as a tenancy administrator:",
+    "setup.step1": "Identity & Security → Domains → Default → Dynamic groups → Create dynamic group",
+    "setup.name": "Name: {name}",
+    "setup.rule": "Matching rule:",
+    "setup.legacy": "(Older tenancies without identity domains: Identity → Dynamic Groups.)",
+    "setup.step2": "Identity & Security → Policies → pick the root compartment → Create policy",
+    "setup.statements": "Name: {name} — statements:",
+    "setup.step3": "Wait 1–5 minutes. The next scheduled report fills in automatically.",
+    "setup.apikey": "Grant the group of the API-key user these policy statements (root compartment):",
+}
+
+_LOCALE: dict[str, str] = dict(EN)
+
+
+def locale_dirs() -> list[Path]:
+    here = Path(__file__).resolve().parent
+    dirs = [here / "oci_free_tier_report_locales", here / "locales"]
+    if os.environ.get("REPORT_LOCALE_DIR"):
+        dirs.insert(0, Path(os.environ["REPORT_LOCALE_DIR"]).expanduser())
+    return dirs
+
+
+def locale_file(code: str) -> Path | None:
+    if not re.fullmatch(r"[A-Za-z]{2,3}([_-][A-Za-z0-9]{2,8})?", code or ""):
+        return None
+    return next((d / f"{code}.json" for d in locale_dirs() if (d / f"{code}.json").is_file()), None)
+
+
+def available_locales() -> list[str]:
+    codes = {"en"}
+    for d in locale_dirs():
+        if d.is_dir():
+            codes |= {f.stem for f in d.glob("*.json")}
+    return sorted(codes)
+
+
+def set_language(code: str) -> str:
+    """Load EN, then overlay locales/<code>.json. Unknown code → English (warning on stderr)."""
+    global _LOCALE
+    _LOCALE = dict(EN)
+    if not code or code == "en":
+        return "en"
+    path = locale_file(code)
+    if path is None:
+        print(f"REPORT_LANG={code}: no locale file found, using English", file=sys.stderr)
+        return "en"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"REPORT_LANG={code}: cannot read {path} ({e}), using English", file=sys.stderr)
+        return "en"
+    _LOCALE.update({k: v for k, v in data.items() if k in EN and isinstance(v, str)})
+    return code
+
+
+def T(key: str, **kw) -> str:
+    """Localized text. A broken translation (bad placeholder) falls back to English for that key."""
+    try:
+        return _LOCALE.get(key, EN[key]).format(**kw)
+    except (KeyError, IndexError, ValueError):
+        return EN[key].format(**kw)
+
+
+def _placeholders(template: str) -> set[str]:
+    return {f for _, f, _, _ in string.Formatter().parse(template) if f}
+
+
+def check_locale(code: str) -> int:
+    """Validate locales/<code>.json against EN: missing/extra keys, placeholder and list mismatches."""
+    path = locale_file(code)
+    if path is None:
+        print(f"No locale file for '{code}' in: " + ", ".join(str(d) for d in locale_dirs()))
+        return 1
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as e:
+        print(f"{path}: invalid JSON — {e}")
+        return 1
+    problems = []
+    for key in EN:
+        if key not in data:
+            problems.append(f"missing key: {key}")
+        elif not isinstance(data[key], str):
+            problems.append(f"{key}: value must be a string")
+        elif _placeholders(data[key]) != _placeholders(EN[key]):
+            problems.append(
+                f"{key}: placeholders {sorted(_placeholders(data[key]))} != {sorted(_placeholders(EN[key]))}"
+            )
+    problems += [f"unknown key (ignored): {k}" for k in data if k not in EN]
+    for key, n in (("date.weekdays", 7), ("date.months", 12)):
+        if isinstance(data.get(key), str) and len(data[key].split(",")) != n:
+            problems.append(f"{key}: needs {n} comma-separated names")
+    print(f"{path}: {len(EN)} keys checked")
+    for prob in problems:
+        print(f"  ✗ {prob}")
+    if not problems:
+        print(f"  ✓ '{code}' ({data.get('_language', '?')}) is complete")
+    return 1 if any(not prob.startswith("unknown key") for prob in problems) else 0
+
+
+def fmt_date(when: dt.datetime) -> str:
+    days = T("date.weekdays").split(",")
+    months = T("date.months").split(",")
+    if len(days) != 7 or len(months) != 12:
+        days, months = EN["date.weekdays"].split(","), EN["date.months"].split(",")
+    return T(
+        "date.format",
+        weekday=days[when.weekday()].strip(),
+        day=f"{when.day:02d}",
+        month=months[when.month - 1].strip(),
+        year=when.year,
+    )
+
+
 # ---------------------------------------------------------------- data model
 @dataclass
 class Row:
@@ -113,6 +324,7 @@ class Row:
 
 @dataclass
 class Section:
+    id: str  # stable, untranslated identifier
     title: str
     columns: list[str]  # header for the label column + each value column
     rows: list[Row] = field(default_factory=list)
@@ -125,6 +337,7 @@ class Report:
     timezone: str = ""
     region: str = ""
     currency: str = ""
+    lang: str = "en"
     sections: list[Section] = field(default_factory=list)
     alerts: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -139,12 +352,16 @@ def level(used: float, limit: float) -> str:
 
 
 def num(x: float, nd: int = 0) -> str:
-    return f"{x:,.{nd}f}"
+    s = f"{x:,.{nd}f}"
+    th, dec = T("num.thousands"), T("num.decimal")
+    if (th, dec) == (",", "."):
+        return s
+    return s.replace(",", "\0").replace(".", dec).replace("\0", th)
 
 
 def short_err(e: Exception) -> str:
     if isinstance(e, oci.exceptions.ServiceError):
-        hint = " (missing IAM policy?)" if e.status in (401, 403, 404) else ""
+        hint = f" {T('err.iam_hint')}" if e.status in (401, 403, 404) else ""
         return f"{e.status} {e.code}{hint}"
     return f"{type(e).__name__}: {str(e)[:120]}"
 
@@ -225,42 +442,35 @@ def collect_compute(ctx: Ctx, rep: Report) -> list:
         if i.shape == "VM.Standard.E2.1.Micro":
             micro += 1
         if i.shape not in FREE_SHAPES:
-            rep.alerts.append(f"Instance '{i.display_name}' uses paid shape {i.shape}.")
+            rep.alerts.append(T("alert.paid_shape", name=i.display_name, shape=i.shape))
     rep.sections.append(
         Section(
-            "Compute",
-            ["Compute", "Used", "Limit"],
+            "compute",
+            T("sec.compute"),
+            [T("sec.compute"), T("col.used"), T("col.limit")],
             [
-                limit_row("A1 OCPU", ctx.a1_live_ocpu, LIMITS["a1_ocpu"]),
-                limit_row("A1 RAM (GB)", ctx.a1_live_mem, LIMITS["a1_mem_gb"]),
-                limit_row("E2.1.Micro VMs", micro, LIMITS["micro_count"]),
+                limit_row(T("row.a1_ocpu"), ctx.a1_live_ocpu, LIMITS["a1_ocpu"]),
+                limit_row(T("row.a1_ram"), ctx.a1_live_mem, LIMITS["a1_mem_gb"]),
+                limit_row(T("row.micro"), micro, LIMITS["micro_count"]),
             ],
         )
     )
     sec = rep.sections[-1]
     free_ocpu = LIMITS["a1_ocpu"] - ctx.a1_live_ocpu
     free_mem = LIMITS["a1_mem_gb"] - ctx.a1_live_mem
+    cap = {"ocpu": num(ctx.a1_live_ocpu), "mem": num(ctx.a1_live_mem)}
     if free_ocpu < 0 or free_mem < 0:
-        sec.note = (
-            f"Running A1 capacity ({num(ctx.a1_live_ocpu)} OCPU / {num(ctx.a1_live_mem)} GB) is above the free "
-            "4 OCPU / 24 GB — the extra is billed. Shrink or stop an A1 instance."
-        )
+        sec.note = T("note.compute.over", **cap)
     elif free_ocpu == 0 or free_mem == 0:
-        sec.note = (
-            f"A1 is at the free cap ({num(ctx.a1_live_ocpu)} OCPU / {num(ctx.a1_live_mem)} GB) — still free, "
-            "but any new or bigger A1 instance would be billed."
-        )
+        sec.note = T("note.compute.at_cap", **cap)
     else:
-        sec.note = (
-            f"A1 uses {num(ctx.a1_live_ocpu)} of 4 OCPU and {num(ctx.a1_live_mem)} of 24 GB — "
-            f"{num(free_ocpu)} OCPU / {num(free_mem)} GB still free to use."
-        )
+        sec.note = T("note.compute.ok", **cap, free_ocpu=num(free_ocpu), free_mem=num(free_mem))
     if micro:
-        sec.note += f" {micro} of 2 free E2.1.Micro VMs in use."
+        sec.note += " " + T("note.compute.micro", n=micro)
     if ctx.a1_live_ocpu > LIMITS["a1_ocpu"] or ctx.a1_live_mem > LIMITS["a1_mem_gb"]:
-        rep.alerts.append("Live A1 capacity exceeds 4 OCPU / 24 GB.")
+        rep.alerts.append(T("alert.a1_over"))
     if micro > LIMITS["micro_count"]:
-        rep.alerts.append("More than 2 E2.1.Micro instances.")
+        rep.alerts.append(T("alert.micro_over"))
     return [i for i in instances if i.lifecycle_state == "RUNNING"]
 
 
@@ -294,22 +504,18 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
             y_total += amt
     mtd = sum(by_svc.values())
 
-    title = f"Cost ({rep.currency})" if rep.currency else "Cost"
-    sec = Section("Cost", [title, "Amount"])
-    for label, amt in (("Yesterday", y_total), ("Month to date", mtd)):
+    title = T("sec.cost_currency", currency=rep.currency) if rep.currency else T("sec.cost")
+    sec = Section("cost", T("sec.cost"), [title, T("col.amount")])
+    for label, amt in ((T("row.yesterday"), y_total), (T("row.mtd"), mtd)):
         sec.rows.append(Row([label, num(amt, 2)], "ok" if amt < 0.005 else "over", {"amount": amt}))
     if mtd >= 0.005:
         for svc, amt in sorted(by_svc.items(), key=lambda kv: -kv[1]):
             if amt >= 0.005:
                 sec.rows.append(Row([f"· {svc}", num(amt, 2)], "over", {"amount": amt}))
-        rep.alerts.append(
-            f"You were charged {num(mtd, 2)} {rep.currency} this month — something is outside Always Free!"
-        )
-        sec.note = "Something billable is running — the rows above show which service is charging you."
+        rep.alerts.append(T("alert.charged", amount=num(mtd, 2), currency=rep.currency))
+        sec.note = T("note.cost.charged")
     else:
-        sec.note = (
-            "Billed cost from Oracle's Usage API (data lags a few hours). 0.00 means you are not paying anything."
-        )
+        sec.note = T("note.cost.ok")
     rep.sections.insert(0, sec)
 
     # A1 hours: billed month-to-date + currently-live capacity for the rest of the month
@@ -325,10 +531,12 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
             a1_ocpu_h += q
     next_month = (month_start + dt.timedelta(days=32)).replace(day=1)
     hours_left = (next_month - today).total_seconds() / 3600
-    hours = Section("A1 hours", ["A1 hours", "Used", "Proj.", "Limit"])
+    hours = Section(
+        "a1_hours", T("sec.a1_hours"), [T("sec.a1_hours"), T("col.used"), T("col.proj"), T("col.limit")]
+    )
     for label, used, key, live in (
-        ("OCPU-h", a1_ocpu_h, "a1_ocpu_hours", ctx.a1_live_ocpu),
-        ("GB-h", a1_gb_h, "a1_gb_hours", ctx.a1_live_mem),
+        (T("row.ocpu_h"), a1_ocpu_h, "a1_ocpu_hours", ctx.a1_live_ocpu),
+        (T("row.gb_h"), a1_gb_h, "a1_gb_hours", ctx.a1_live_mem),
     ):
         proj = used + live * hours_left
         hours.rows.append(
@@ -339,16 +547,12 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
             )
         )
         if proj > LIMITS[key]:
-            rep.alerts.append(f"A1 {label} projected to exceed the monthly free quota.")
+            rep.alerts.append(T("alert.a1_hours_over", unit=label))
     proj_ocpu = a1_ocpu_h + ctx.a1_live_ocpu * hours_left
     max_ocpu = LIMITS["a1_ocpu"] * (next_month - month_start).days * 24
-    hours.note = (
-        f"Free monthly quota: 3,000 OCPU-h + 18,000 GB-h. Used so far {num(a1_ocpu_h)} OCPU-h; at the current size "
-        f"the month ends at ~{num(proj_ocpu)}. A 4 OCPU / 24 GB A1 running 24/7 needs at most "
-        f"{num(max_ocpu)} OCPU-h this month, so it never runs over. Resets on the 1st."
-    )
+    hours.note = T("note.a1_hours", used=num(a1_ocpu_h), projected=num(proj_ocpu), max=num(max_ocpu))
     # place right after Compute when present
-    idx = next((n + 1 for n, s in enumerate(rep.sections) if s.title == "Compute"), len(rep.sections))
+    idx = next((n + 1 for n, s in enumerate(rep.sections) if s.id == "compute"), len(rep.sections))
     rep.sections.insert(idx, hours)
 
 
@@ -376,34 +580,33 @@ def collect_storage(ctx: Ctx, rep: Report) -> None:
 
     rep.sections.append(
         Section(
-            "Storage",
-            ["Storage", "Used", "Limit"],
+            "storage",
+            T("sec.storage"),
+            [T("sec.storage"), T("col.used"), T("col.limit")],
             [
-                limit_row("Block+boot (GB)", vol_gb, LIMITS["block_gb"]),
-                limit_row("Volume backups", backups, LIMITS["backups"]),
-                limit_row("Object (GB)", obj / GB, LIMITS["object_gb"], nd=2),
+                limit_row(T("row.block"), vol_gb, LIMITS["block_gb"]),
+                limit_row(T("row.backups"), backups, LIMITS["backups"]),
+                limit_row(T("row.object"), obj / GB, LIMITS["object_gb"], nd=2),
             ],
         )
     )
     sec = rep.sections[-1]
     left = LIMITS["block_gb"] - vol_gb
     if left < 0:
-        sec.note = f"Volumes total {vol_gb} GB, {-left} GB over the free 200 GB — delete or shrink a volume."
+        parts = [T("note.storage.over", total=num(vol_gb), over=num(-left))]
     elif left == 0:
-        sec.note = (
-            "Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume."
-        )
+        parts = [T("note.storage.full")]
     else:
-        sec.note = f"{left} GB of the free 200 GB block storage still available."
+        parts = [T("note.storage.ok", left=num(left))]
     if backups > LIMITS["backups"]:
-        sec.note += f"{backups} volume backups — only 5 are free, delete the oldest. "
+        parts.append(T("note.storage.backups", n=backups))
     if obj / GB > LIMITS["object_gb"]:
-        sec.note += f"Object Storage holds {num(obj / GB, 2)} GB — only 20 GB is free. "
-    sec.note = sec.note.strip()
+        parts.append(T("note.storage.object", gb=num(obj / GB, 2)))
+    sec.note = " ".join(parts)
     if vol_gb > LIMITS["block_gb"] or backups > LIMITS["backups"]:
-        rep.alerts.append("Block storage or backups exceed the Always Free limit.")
+        rep.alerts.append(T("alert.storage_over"))
     if obj / GB > LIMITS["object_gb"]:
-        rep.alerts.append("Object Storage exceeds 20 GB.")
+        rep.alerts.append(T("alert.object_over"))
 
 
 def _metrics(mon, ctx: Ctx, namespace: str, query: str, start, end):
@@ -427,17 +630,17 @@ def collect_network(ctx: Ctx, rep: Report) -> None:
     )
     rep.sections.append(
         Section(
-            "Network",
-            ["Network", "Used", "Limit"],
-            [limit_row("Egress MTD (GB)", egress / GB, LIMITS["egress_gb"], nd=2)],
+            "network",
+            T("sec.network"),
+            [T("sec.network"), T("col.used"), T("col.limit")],
+            [limit_row(T("row.egress"), egress / GB, LIMITS["egress_gb"], nd=2)],
         )
     )
-    rep.sections[-1].note = (
-        f"Outbound traffic this month: {num(egress / GB, 2)} GB of the free 10 TB "
-        f"({num(100 * egress / GB / LIMITS['egress_gb'], 3)}%). Counted from VNIC metrics, so slightly overstated."
+    rep.sections[-1].note = T(
+        "note.network", gb=num(egress / GB, 2), pct=num(100 * egress / GB / LIMITS["egress_gb"], 3)
     )
     if egress / GB > LIMITS["egress_gb"]:
-        rep.alerts.append("Outbound data transfer exceeds 10 TB this month.")
+        rep.alerts.append(T("alert.egress_over"))
 
 
 def collect_idle(ctx: Ctx, rep: Report, running: list) -> None:
@@ -449,43 +652,38 @@ def collect_idle(ctx: Ctx, rep: Report, running: list) -> None:
             stats.setdefault(s.dimensions.get("resourceId"), {})[metric] = p95(
                 p.value for p in s.aggregated_datapoints
             )
-    sec = Section("Idle", ["Idle 7d p95", "CPU %", "RAM %"])
+    sec = Section("idle", T("sec.idle"), [T("sec.idle_col"), T("col.cpu"), T("col.ram")])
     fmt = lambda v: "n/a" if math.isnan(v) else num(v, 1)  # noqa: E731
-    notes = [
-        "Oracle may reclaim an Always Free VM (Free Tier accounts) when its 7-day p95 CPU is under 20% "
-        "and, on A1, RAM is also under 20%."
-    ]
+    notes = [T("note.idle.rule")]
     for i in running:
         st = stats.get(i.id, {})
         cpu = st.get("CpuUtilization", math.nan)
         mem = st.get("MemoryUtilization", math.nan)
         is_a1 = i.shape == "VM.Standard.A1.Flex"
         thr = LIMITS["idle_pct"]
-        low = lambda v: "below" if v < thr else "above"  # noqa: E731
+        side = lambda v: T("note.idle.below") if v < thr else T("note.idle.above")  # noqa: E731
+        name = i.display_name
         if math.isnan(cpu):
             status = "info"  # no Oracle Cloud Agent metrics
-            notes.append(f"{i.display_name}: no metrics — enable the Oracle Cloud Agent monitoring plugin.")
+            notes.append(T("note.idle.no_metrics", name=name))
         elif cpu < thr and (not is_a1 or (not math.isnan(mem) and mem < thr)):
             status = "high"
-            rep.alerts.append(
-                f"'{i.display_name}' is idle by Oracle's rule (7-day p95 < 20%) — "
-                "Free Tier accounts may get it reclaimed."
-            )
-            notes.append(
-                f"{i.display_name}: CPU {fmt(cpu)}% and RAM {fmt(mem)}% are both under 20% → at risk of reclaim."
-            )
+            rep.alerts.append(T("alert.idle", name=name))
+            notes.append(T("note.idle.risk", name=name, cpu=fmt(cpu), ram=fmt(mem)))
         else:
             status = "ok"
-            why = (
-                f"CPU {fmt(cpu)}% ({low(cpu)} 20%)"
-                + (f", RAM {fmt(mem)}% ({low(mem)} 20%)" if is_a1 and not math.isnan(mem) else "")
-            )
-            notes.append(f"{i.display_name}: {why} → safe.")
+            if is_a1 and not math.isnan(mem):
+                notes.append(
+                    T("note.idle.safe_cpu_ram", name=name, cpu=fmt(cpu), cpu_side=side(cpu),
+                      ram=fmt(mem), ram_side=side(mem))
+                )
+            else:
+                notes.append(T("note.idle.safe_cpu", name=name, cpu=fmt(cpu), cpu_side=side(cpu)))
         sec.rows.append(
             Row([i.display_name, fmt(cpu), fmt(mem)], status, {"cpu_p95": cpu, "mem_p95": mem, "id": i.id})
         )
     if not running:
-        sec.rows.append(Row(["no running VM", "", ""], "info"))
+        sec.rows.append(Row([T("row.no_vm"), "", ""], "info"))
     sec.note = " ".join(notes)
     rep.sections.append(sec)
 
@@ -512,25 +710,27 @@ def collect_other(ctx: Ctx, rep: Report) -> None:
             else:
                 adb_paid += 1
     sec = Section(
-        "Other",
-        ["Other", "Used", "Limit"],
+        "other",
+        T("sec.other"),
+        [T("sec.other"), T("col.used"), T("col.limit")],
         [
-            limit_row("Load balancers", lbs, LIMITS["lb"]),
-            limit_row("Network LBs", nlbs, LIMITS["nlb"]),
-            limit_row("Autonomous DBs", adb_free, LIMITS["adb"]),
+            limit_row(T("row.lb"), lbs, LIMITS["lb"]),
+            limit_row(T("row.nlb"), nlbs, LIMITS["nlb"]),
+            limit_row(T("row.adb"), adb_free, LIMITS["adb"]),
         ],
     )
     if adb_paid:
-        sec.rows.append(limit_row("Paid ADBs", adb_paid, 0))
-        rep.alerts.append(f"{adb_paid} Autonomous Database(s) are not Always Free.")
-    used = [f"{n} {what}" for n, what in ((lbs, "load balancer"), (nlbs, "network LB"), (adb_free, "free Autonomous DB")) if n]
-    sec.note = (
-        "Free: 1 load balancer (10 Mbps), 1 network LB, 2 Autonomous DBs. "
-        + (f"In use: {', '.join(used)}." if used else "None in use.")
+        sec.rows.append(limit_row(T("row.adb_paid"), adb_paid, 0))
+        rep.alerts.append(T("alert.adb_paid", n=adb_paid))
+    in_use = [
+        T(key, n=n) for n, key in ((lbs, "note.other.lb"), (nlbs, "note.other.nlb"), (adb_free, "note.other.adb")) if n
+    ]
+    sec.note = T("note.other.free") + " " + (
+        T("note.other.in_use", items=", ".join(in_use)) if in_use else T("note.other.none")
     )
     rep.sections.append(sec)
     if lbs > LIMITS["lb"] or nlbs > LIMITS["nlb"] or adb_free > LIMITS["adb"]:
-        rep.alerts.append("Load balancer / NLB / Autonomous DB count exceeds the free limit.")
+        rep.alerts.append(T("alert.other_over"))
 
 
 def build_report() -> Report:
@@ -541,17 +741,21 @@ def build_report() -> Report:
         now = dt.datetime.now(ZoneInfo(tzname))
     else:
         now = dt.datetime.now().astimezone()
-    rep = Report(generated_at=now.isoformat(timespec="minutes"), timezone=now.tzname() or "")
+    rep = Report(
+        generated_at=now.isoformat(timespec="minutes"),
+        timezone=now.tzname() or "",
+        lang=set_language(os.environ.get("REPORT_LANG", "en")),
+    )
     ctx = Ctx()  # auth failure propagates → non-zero exit → Hermes failure alert
     rep.region = ctx.region
     running: list = []
     steps = [
-        ("Compute", lambda: running.extend(collect_compute(ctx, rep))),
-        ("Cost", lambda: collect_cost(ctx, rep)),
-        ("Storage", lambda: collect_storage(ctx, rep)),
-        ("Network", lambda: collect_network(ctx, rep)),
-        ("Idle", lambda: collect_idle(ctx, rep, running)),
-        ("Other", lambda: collect_other(ctx, rep)),
+        (T("sec.compute"), lambda: running.extend(collect_compute(ctx, rep))),
+        (T("sec.cost"), lambda: collect_cost(ctx, rep)),
+        (T("sec.storage"), lambda: collect_storage(ctx, rep)),
+        (T("sec.network"), lambda: collect_network(ctx, rep)),
+        (T("sec.idle"), lambda: collect_idle(ctx, rep, running)),
+        (T("sec.other"), lambda: collect_other(ctx, rep)),
     ]
     auth_failures = 0
     for name, fn in steps:
@@ -576,14 +780,14 @@ def _header(rep: Report, bold: bool) -> list[str]:
     icons = _icons()
     b = (lambda s: f"**{s}**") if bold else (lambda s: s)
     when = dt.datetime.fromisoformat(rep.generated_at)
-    out = [b(f"OCI Always Free · {when:%a %d %b %Y}"), f"{rep.region} · {when:%H:%M} {rep.timezone}", ""]
+    out = [b(T("title", date=fmt_date(when))), f"{rep.region} · {when:%H:%M} {rep.timezone}", ""]
     if rep.alerts:
-        out.append(f"{icons['over']} {b(f'{len(rep.alerts)} alert(s)')}")
+        out.append(f"{icons['over']} {b(T('header.alerts', n=len(rep.alerts)))}")
         out += [f"• {a}" for a in rep.alerts]
     elif rep.errors:
-        out.append(f"{icons['error']} Some checks failed — status incomplete")
+        out.append(f"{icons['error']} {T('header.incomplete')}")
     else:
-        out.append(f"{icons['ok']} {b('All within Always Free — cost 0')}")
+        out.append(f"{icons['ok']} {b(T('header.ok'))}")
     return out
 
 
@@ -602,7 +806,7 @@ def _notes(rep: Report, bold: bool) -> list[str]:
         worst = max(flagged, key=order.index)
         title = f"**{sec.title}**" if bold else sec.title
         out.append(f"{icons[worst]} {title}: {sec.note}")
-    return ["", "**Notes**" if bold else "Notes"] + out if out else []
+    return ["", f"**{T('notes.title')}**" if bold else T("notes.title")] + out if out else []
 
 
 def _footer(rep: Report, bold: bool = True) -> list[str]:
@@ -611,7 +815,7 @@ def _footer(rep: Report, bold: bool = True) -> list[str]:
     if rep.errors:
         out += [""] + [f"{icons['error']} {e}" for e in rep.errors]
     legend = "  ".join(
-        f"{icons[k]} {t}" for k, t in (("ok", "<70%"), ("warn", "70-90%"), ("high", "≥90%"), ("over", "over"))
+        f"{icons[k]} {T('legend.' + k)}" for k in ("ok", "warn", "high", "over")
     )
     return out + ["", legend]
 
@@ -621,7 +825,7 @@ def render_markdown(rep: Report) -> str:
     icons = _icons()
     out = _header(rep, bold=True)
     for sec in rep.sections:
-        cols = sec.columns + ["Status"]
+        cols = sec.columns + [T("col.status")]
         out += ["", "| " + " | ".join(cols) + " |", "|" + "|".join([":---"] + ["---:"] * (len(cols) - 2) + [":---:"]) + "|"]
         for r in sec.rows:
             cells = [c.replace("|", "/") for c in r.cells] + [icons[r.status]]
@@ -664,7 +868,7 @@ def setup_steps(markdown: bool) -> list[str]:
             "Allow group <your group> to read usage-report in tenancy",
             "Allow group <your group> to read all-resources in tenancy",
         ]
-        intro = ["Grant the group of the API-key user these policy statements (root compartment):"]
+        intro = [T("setup.apikey")]
         return intro + ((["```"] + stmts + ["```"]) if markdown else [f"  {x}" for x in stmts])
     instance_id = _imds("instance/id")
     rule = f"instance.id = '{instance_id}'" if instance_id else "instance.compartment.id = '<compartment OCID>'"
@@ -675,19 +879,19 @@ def setup_steps(markdown: bool) -> list[str]:
     block = (lambda lines: ["```"] + lines + ["```"]) if markdown else (lambda lines: [f"     {x}" for x in lines])
     b = (lambda t: f"**{t}**") if markdown else (lambda t: t)
     return [
-        "One-time setup in the OCI Console (free, read-only), as a tenancy administrator:",
+        T("setup.intro"),
         "",
-        f"1. {b('Identity & Security → Domains → Default → Dynamic groups → Create dynamic group')}",
-        "   Name: oci-free-tier-report",
-        "   Matching rule:",
+        f"1. {b(T('setup.step1'))}",
+        "   " + T("setup.name", name="oci-free-tier-report"),
+        "   " + T("setup.rule"),
         *block([rule]),
-        "   (Older tenancies without identity domains: Identity → Dynamic Groups.)",
+        "   " + T("setup.legacy"),
         "",
-        f"2. {b('Identity & Security → Policies →')} pick the {b('root')} compartment {b('→ Create policy')}",
-        "   Name: oci-free-tier-report-read — statements:",
+        f"2. {b(T('setup.step2'))}",
+        "   " + T("setup.statements", name="oci-free-tier-report-read"),
         *block(stmts),
         "",
-        "3. Wait 1–5 minutes. The next scheduled report fills in automatically.",
+        "3. " + T("setup.step3"),
     ]
 
 
@@ -696,11 +900,10 @@ def render_setup(rep: Report, markdown: bool) -> str:
     when = dt.datetime.fromisoformat(rep.generated_at)
     b = (lambda t: f"**{t}**") if markdown else (lambda t: t)
     out = [
-        b(f"OCI Always Free · {when:%a %d %b %Y}"),
+        b(T("title", date=fmt_date(when))),
         f"{rep.region} · {when:%H:%M} {rep.timezone}",
         "",
-        f"{icons['error']} {b('Oracle permissions are not set up yet')} — this VM can sign in to OCI but is not "
-        "allowed to read usage, so no checks could run.",
+        f"{icons['error']} {b(T('setup.headline'))} — {T('setup.explain')}",
         "",
     ]
     return "\n".join(out + setup_steps(markdown))
@@ -729,11 +932,13 @@ def _imds(path: str) -> str | None:
 
 
 def preflight() -> int:
+    lang = set_language(os.environ.get("REPORT_LANG", "en"))
     print(f"oci-free-tier-report {__version__} — preflight\n")
     auth = os.environ.get("OCI_AUTH", "instance_principal")
     instance_id = _imds("instance/id")
     print(f"auth mode    : {auth}")
     print(f"format       : {os.environ.get('REPORT_FORMAT', 'markdown')}")
+    print(f"language     : {lang}")
     print(f"OCI instance : {instance_id or 'not detected (not running on OCI?)'}")
     try:
         ctx = Ctx()
@@ -784,8 +989,22 @@ def main() -> int:
         choices=["markdown", "mono", "plain", "json", "table"],
         default=os.environ.get("REPORT_FORMAT", "markdown"),
     )
+    ap.add_argument("--lang", help="report language (overrides REPORT_LANG)")
+    ap.add_argument("--list-locales", action="store_true", help="list available languages")
+    ap.add_argument("--dump-locale", action="store_true", help="print the English strings as a locale template")
+    ap.add_argument("--check-locale", metavar="CODE", help="validate locales/<CODE>.json against English")
     ap.add_argument("--version", action="version", version=__version__)
     args = ap.parse_args()
+    if args.lang:
+        os.environ["REPORT_LANG"] = args.lang
+    if args.list_locales:
+        print("\n".join(available_locales()))
+        return 0
+    if args.dump_locale:
+        print(json.dumps(EN, ensure_ascii=False, indent=2))
+        return 0
+    if args.check_locale:
+        return check_locale(args.check_locale)
     if args.check:
         return preflight()
     try:
