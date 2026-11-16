@@ -18,8 +18,9 @@ melewati batas gratis.
   diberi penjelasan artinya dan apa yang jangan dilakukan.
 - **Bahasamu sendiri.** Bawaan bahasa Inggris (default) dan Bahasa Indonesia; bot Hermes bisa menambahkan bahasa
   lain sekali saat install — laporan hariannya tetap tanpa AI.
-- **Install dengan satu kalimat.** Minta bot Hermes kamu untuk meng-install-nya, dan dia memasang cron job di chat
-  yang sedang dipakai.
+- **Install dengan satu kalimat, update dengan satu perintah.** Dikemas sebagai skill Hermes: bot meng-install-nya
+  lewat `hermes skills install` dan memasang cron job di chat yang sedang dipakai; `hermes skills update` menjaganya
+  tetap terbaru.
 
 > **Syarat: hanya berjalan di compute instance OCI.** Hermes harus terpasang di VM Oracle Cloud yang ingin dipantau
 > (Ampere A1 Flex atau VM.Standard.E2.1.Micro, Ubuntu / Oracle Linux). Laporan login sebagai VM tersebut lewat
@@ -28,7 +29,7 @@ melewati batas gratis.
 ## Daftar isi
 - [Contoh laporan](#contoh-laporan)
 - [Install dengan satu pesan ke bot Hermes](#install-dengan-satu-pesan-ke-bot-hermes)
-- [Install manual](#install-manual)
+- [Install manual](#install-manual) · [Update](#update)
 - [Setup izin OCI (sekali saja)](#setup-izin-oci-sekali-saja)
 - [Batas Oracle Always Free yang dicek](#batas-oracle-always-free-yang-dicek)
 - [Bahasa](#bahasa)
@@ -74,42 +75,49 @@ GB-h      3.824   12.464 18.000 ✅
 
 Di chat tempat kamu ingin menerima laporan harian, kirim ke bot Hermes:
 
-> Install https://github.com/pgen0x/hermes-oci-free-tier-report for your own profile as a daily no-agent
-> cron job that posts to this chat at 07:00, report language Indonesian (id). Follow
-> skills/oci-free-tier-report/SKILL.md step by step and tell me the installer's exit code.
+> Install the Hermes skill pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report with
+> `hermes skills install`, then follow its SKILL.md to set up a daily no-agent cron job that posts to this chat
+> at 07:00, report language Indonesian (id), and tell me the installer's exit code.
 
-Hapus bagian `report language Indonesian (id)` kalau ingin laporan dalam bahasa Inggris (default). Bot akan
-mengikuti [`skills/oci-free-tier-report/SKILL.md`](skills/oci-free-tier-report/SKILL.md): clone repo, menjalankan
-installer untuk profile-nya sendiri, menargetkan chat saat ini, mengirim laporan pertama, dan — kalau izin Oracle
-belum ada — memberikan dua langkah di Console lengkap dengan OCID instance kamu.
-
-Supaya bot selalu tahu skill ini (update, "baris ini artinya apa?"):
+Hapus bagian `report language Indonesian (id)` kalau ingin laporan dalam bahasa Inggris (default). Atau install
+skill-nya sendiri, lalu cukup minta bot "pasang OCI free tier report":
 
 ```bash
-hermes skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
+hermes [-p <profile>] skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
 ```
+
+Folder skill sudah berisi semuanya — `SKILL.md`, `install.sh`, script laporan, dan file bahasa — jadi tidak ada
+yang perlu di-clone. Bot mengikuti [`SKILL.md`](skills/oci-free-tier-report/SKILL.md): menjalankan installer untuk
+profile-nya sendiri, menargetkan chat saat ini, mengirim laporan pertama, dan — kalau izin Oracle belum ada —
+memberikan dua langkah di Console lengkap dengan OCID instance kamu.
 
 ## Install manual
 
-Di VM OCI tempat Hermes berjalan:
+Di VM OCI tempat Hermes berjalan, dari skill yang sudah ter-install
+(`~/.hermes/skills/oci-free-tier-report`, atau `~/.hermes/profiles/<profile>/skills/oci-free-tier-report`):
+
+```bash
+bash ~/.hermes/skills/oci-free-tier-report/install.sh --deliver telegram --lang id   # profile default → home channel Telegram, 07:00
+```
+
+atau dari git checkout (kontributor, atau tanpa skills hub):
 
 ```bash
 git clone https://github.com/pgen0x/hermes-oci-free-tier-report
-cd hermes-oci-free-tier-report
-./install.sh --deliver telegram --lang id   # profile default → home channel Telegram, jam 07:00 waktu lokal
+bash hermes-oci-free-tier-report/skills/oci-free-tier-report/install.sh --deliver telegram --lang id
 ```
 
-Contoh lain:
+Contoh lain (dijalankan dari folder skill):
 
 ```bash
-./install.sh --profile work --deliver discord:123456789012345678
-./install.sh --deliver telegram:-1001234567890 --schedule "30 8 * * *" --timezone Asia/Jakarta
-./install.sh --deliver whatsapp:6281234567890@s.whatsapp.net   # → format mono
-./install.sh --deliver telegram --format mono                     # ganti format otomatis
-./install.sh --deliver telegram --lang en                         # kembali ke bahasa Inggris (default)
-./install.sh --deliver telegram --unwrap                          # hapus header "Cronjob Response" dari Hermes
-./install.sh --no-cron                                            # install + cek izin saja
-./install.sh --uninstall --profile work
+bash install.sh --profile work --deliver discord:123456789012345678
+bash install.sh --deliver telegram:-1001234567890 --schedule "30 8 * * *" --timezone Asia/Jakarta
+bash install.sh --deliver whatsapp:6281234567890@s.whatsapp.net   # → format mono
+bash install.sh --deliver telegram --format mono                     # ganti format otomatis
+bash install.sh --deliver telegram --lang en                         # kembali ke bahasa Inggris (default)
+bash install.sh --deliver telegram --unwrap                          # hapus header "Cronjob Response" dari Hermes
+bash install.sh --no-cron                                            # install + cek izin saja
+bash install.sh --uninstall --profile work
 ```
 
 Yang dilakukan installer:
@@ -125,6 +133,23 @@ Yang dilakukan installer:
 
 Aman dijalankan ulang. Di dalam sesi Hermes, installer mendeteksi profile sesi itu sendiri.
 Exit code: `0` siap · `3` terpasang tapi izin OCI belum ada · `1` error.
+
+## Update
+
+```bash
+hermes [-p <profile>] skills check                          # ada versi baru?
+hermes [-p <profile>] skills update oci-free-tier-report    # ambil versi baru
+bash <folder skill>/install.sh --profile <profile> --deliver <target yang sama>   # pasang script baru
+```
+
+Menjalankan ulang installer tetap mempertahankan cron job, jadwal, dan pengaturanmu (bahasa, format, zona waktu).
+Atau cukup minta ke bot: "update skill OCI free tier report". Dari git checkout: `git pull`, lalu jalankan ulang
+`install.sh` dengan cara yang sama.
+
+**Upgrade dari 1.3.x atau lebih lama** (ter-install dari clone di `~/.local/src/hermes-oci-free-tier-report`):
+install skill seperti di atas, jalankan ulang `install.sh`-nya dengan `--deliver` yang sama, lalu hapus clone lama.
+Kalau bot kamu pernah menyalin `SKILL.md` ke folder `skills/` secara manual, hapus folder itu dulu sebelum
+`hermes skills install`.
 
 ## Setup izin OCI (sekali saja)
 
@@ -177,20 +202,22 @@ catatan, dan panduan setup semuanya diterjemahkan. Pilih dengan `install.sh --la
 `oci_free_tier_report.conf`); tanpa `--lang`, laporan memakai bahasa Inggris.
 
 **Bahasa lain:** minta ke bot Hermes saat install ("…laporan harian dalam bahasa Jepang"). Mengikuti skill, bot
-membuat `locales/<kode>.json` sekali dari template bahasa Inggris, memvalidasinya dengan `--check-locale`, lalu
-meng-install dengan `--lang <kode>`. Laporan harian tetap tanpa LLM. Manual:
+membuat file bahasa sekali dari template bahasa Inggris, memvalidasinya dengan `--check-locale`, lalu mengganti job
+dengan `--lang <kode>`. Laporan harian tetap tanpa LLM. File bahasa custom disimpan di
+`scripts/oci_free_tier_report_locales/` milik profile, jadi update skill tidak akan menimpanya. Manual:
 
 ```bash
+SCRIPTS=~/.hermes/scripts        # atau ~/.hermes/profiles/<profile>/scripts
 PY=~/.local/share/hermes-oci-free-tier-report/venv/bin/python
-$PY oci_free_tier_report.py --dump-locale > locales/ja.json   # template bahasa Inggris
+$PY $SCRIPTS/oci_free_tier_report.py --dump-locale > $SCRIPTS/oci_free_tier_report_locales/ja.json
 # terjemahkan nilainya; jangan ubah key dan {placeholder}
-$PY oci_free_tier_report.py --check-locale ja
-./install.sh --deliver telegram --lang ja
+$PY $SCRIPTS/oci_free_tier_report.py --check-locale ja
+bash <folder skill>/install.sh --deliver telegram --lang ja
 ```
 
 Key yang hilang atau rusak otomatis kembali ke bahasa Inggris, jadi terjemahan yang belum lengkap tidak merusak
 laporan. Identifier OCI (nama shape, OCPU, GB-h, menu Console, policy IAM) sengaja tetap dalam bahasa Inggris supaya
-sama dengan yang kamu lihat dan salin di Oracle Console. Pull request yang menambah `locales/<kode>.json` sangat
+sama dengan yang kamu lihat dan salin di Oracle Console. Pull request yang menambah `skills/oci-free-tier-report/locales/<kode>.json` sangat
 diterima.
 
 ## FAQ
@@ -229,7 +256,7 @@ variable lebih diutamakan). `install.sh --lang`, `--format`, dan `--timezone` me
 
 | Pengaturan | Efek |
 |---|---|
-| `REPORT_LANG=en` | bahasa laporan (`en` default, `id`, atau `locales/<kode>.json` lain) |
+| `REPORT_LANG=en` | bahasa laporan (`en` default, `id`, atau bahasa custom) |
 | `REPORT_FORMAT=markdown` | tabel GFM — asli di Telegram, rata di Slack/Signal/Matrix (default untuk itu) |
 | `REPORT_FORMAT=mono` | tabel monospace dalam code block — default untuk Discord dan WhatsApp |
 | `REPORT_FORMAT=plain` | tabel monospace tanpa code fence — SMS, email, IRC |
@@ -245,11 +272,11 @@ hermes cron list                       # cari id job ("OCI Always Free Usage Rep
 hermes cron run <id>                   # kirim laporan sekarang
 hermes cron edit <id> --schedule "0 9 * * *" --deliver discord:123
 hermes cron pause <id>
-./install.sh --uninstall
+bash <folder skill>/install.sh --uninstall
+hermes skills uninstall oci-free-tier-report
 ```
 
-Tambahkan `hermes -p <profile>` untuk profile bernama. Untuk update: `git pull`, lalu jalankan ulang `install.sh`
-dengan flag yang sama.
+Tambahkan `hermes -p <profile>` untuk profile bernama. Untuk update, lihat [Update](#update).
 
 ## Cara kerja autentikasi
 

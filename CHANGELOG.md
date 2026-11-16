@@ -1,7 +1,29 @@
 # Changelog
 
 Versions follow [Semantic Versioning](https://semver.org/). The version lives in two places that must move
-together: `__version__` in `oci_free_tier_report.py` and `version:` in `skills/oci-free-tier-report/SKILL.md`.
+together: `__version__` in `skills/oci-free-tier-report/oci_free_tier_report.py` and `version:` in `skills/oci-free-tier-report/SKILL.md`.
+
+## [1.4.0] — 2026-11-16
+
+The Hermes skill is now the whole package ([#3](https://github.com/pgen0x/hermes-oci-free-tier-report/issues/3)).
+
+### Changed
+- **BREAKING:** `install.sh`, `oci_free_tier_report.py`, `requirements.txt` and `locales/` moved from the repo root
+  into `skills/oci-free-tier-report/`. `hermes skills install` downloads that folder, so installing needs no
+  `git clone`, and `hermes skills update` now updates the script as well as the instructions.
+- SKILL.md: install from the hub, run `bash <skill dir>/install.sh` (hub installs drop the executable bit), never
+  copy the skill into `skills/` by hand; new update and migration steps.
+- Custom languages are created in the profile's `scripts/oci_free_tier_report_locales/`; reinstalls refresh the
+  bundled locales but keep custom ones, so a skill update can't wipe them.
+
+### Migrating from 1.3.x
+```bash
+hermes [-p <profile>] skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
+bash <skill dir>/install.sh --profile <profile> --deliver <same target>
+rm -rf ~/.local/src/hermes-oci-free-tier-report   # old clone, no longer used
+```
+Existing cron jobs and settings are kept. If your bot copied SKILL.md into `skills/` by hand, delete that folder
+before installing from the hub.
 
 ## [1.3.0] — 2026-11-16
 
