@@ -168,9 +168,10 @@ Limits follow Oracle's [Always Free resources](https://docs.oracle.com/iaas/Cont
 
 ## Languages
 
-Built in: **English** (`en`, default) and **Bahasa Indonesia** (`id`) — numbers, dates, tables, notes and the
-setup guide are all localized. Pick one with `install.sh --lang <code>` (or `REPORT_LANG` in
-`oci_free_tier_report.conf`).
+**English (`en`) is the default.** Also built in: **Bahasa Indonesia** (`id`) — numbers, dates, tables, notes and
+the setup guide are all localized. Pick one with `install.sh --lang <code>` (or `REPORT_LANG` in
+`oci_free_tier_report.conf`); without `--lang` the report is in English. Documentation:
+[Bahasa Indonesia README](README.id.md).
 
 **Any other language:** ask your Hermes bot for it when installing ("…daily report in Japanese"). Following the
 skill, it generates `locales/<code>.json` once from the English template, validates it with `--check-locale`, and
