@@ -13,7 +13,8 @@ Runs as a `--no-agent` cron job: zero tokens per run, the script's stdout is del
 1. **Pick the delivery target.** Default to the chat you are talking in right now, written as
    `<platform>:<chat_id>` (e.g. `telegram:123456789`, `discord:987654321`, `whatsapp:<jid>`).
    A bare platform name (`telegram`) means that platform's home channel. Ask only if unclear.
-2. **Pick the profile.** Use the profile you are running as (`default` unless you are a named profile).
+2. **Pick the profile.** Use the profile you are running as. Inside a Hermes session the installer detects it
+   from `HERMES_HOME` automatically; passing `--profile <name>` explicitly is still fine.
 3. **Pick the time.** Default 07:00 in the user's timezone; confirm in one line, don't interrogate.
 4. Clone and run the installer from a terminal:
    ```bash

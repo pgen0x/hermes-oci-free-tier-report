@@ -9,7 +9,7 @@
 #   ./install.sh --uninstall [--profile NAME]
 set -euo pipefail
 
-PROFILE="default"
+PROFILE=""
 DELIVER=""
 SCHEDULE="0 7 * * *"
 TIMEZONE=""
@@ -27,7 +27,7 @@ usage() {
   cat <<'EOF'
 
 Options:
-  --profile NAME     Hermes profile (default: "default")
+  --profile NAME     Hermes profile (default: the profile of the current Hermes session, else "default")
   --deliver TARGET   Hermes delivery target, e.g. telegram | telegram:<chat_id> | discord:<channel_id>
                      | whatsapp:<jid> | slack:<channel> | signal:<number> ... (required for cron)
   --schedule CRON    cron expression (default: "0 7 * * *")
@@ -68,19 +68,31 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="oci_free_tier_report.py"
 CONF_NAME="oci_free_tier_report.conf"
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+# Hermes root. Inside a profile session HERMES_HOME points at <root>/profiles/<name>, not at the root.
+HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_ROOT="${HERMES_ROOT%/}"
+SESSION_PROFILE=""
+if [[ "$HERMES_ROOT" == */profiles/* ]]; then
+  SESSION_PROFILE="${HERMES_ROOT##*/profiles/}"
+  SESSION_PROFILE="${SESSION_PROFILE%%/*}"
+  HERMES_ROOT="${HERMES_ROOT%/profiles/*}"
+fi
+PROFILE="${PROFILE:-${SESSION_PROFILE:-default}}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/hermes-oci-free-tier-report"
 VENV="$DATA_DIR/venv"
 PY="$VENV/bin/python"
 
 command -v hermes >/dev/null 2>&1 || die "'hermes' not found on PATH. Install Hermes first."
 
+# Always address profiles from the root so -p resolves the same way inside and outside a session.
 if [[ "$PROFILE" == "default" ]]; then
-  HCMD=(hermes)
-  PROFILE_DIR="$HERMES_HOME"
+  HCMD=(env HERMES_HOME="$HERMES_ROOT" hermes)
+  SHOW="hermes"
+  PROFILE_DIR="$HERMES_ROOT"
 else
-  HCMD=(hermes -p "$PROFILE")
-  PROFILE_DIR="$HERMES_HOME/profiles/$PROFILE"
+  HCMD=(env HERMES_HOME="$HERMES_ROOT" hermes -p "$PROFILE")
+  SHOW="hermes -p $PROFILE"
+  PROFILE_DIR="$HERMES_ROOT/profiles/$PROFILE"
 fi
 [[ -d "$PROFILE_DIR" ]] || die "Hermes profile '$PROFILE' not found at $PROFILE_DIR"
 SCRIPTS_DIR="$PROFILE_DIR/scripts"
@@ -98,7 +110,7 @@ if (( UNINSTALL )); then
   done
   rm -f "$SCRIPTS_DIR/$SCRIPT_NAME" "$SCRIPTS_DIR/$CONF_NAME"
   say "Removed $SCRIPTS_DIR/$SCRIPT_NAME"
-  others="$(find "$HERMES_HOME/scripts" "$HERMES_HOME"/profiles/*/scripts -maxdepth 1 \
+  others="$(find "$HERMES_ROOT/scripts" "$HERMES_ROOT"/profiles/*/scripts -maxdepth 1 \
     -name "$SCRIPT_NAME" 2>/dev/null || true)"
   if [[ -n "$others" ]]; then
     say "Keeping shared venv $DATA_DIR — still used by: $(echo $others)"
@@ -188,7 +200,7 @@ if (( CREATE_CRON )); then
     say "Cron job '$JOB_NAME' already exists ($existing) — updating it"
     "${HCMD[@]}" cron edit "$existing" --schedule "$SCHEDULE" --deliver "$DELIVER" \
       --script "$SCRIPT_NAME" --no-agent --interpreter "$PY" --timezone "$TIMEZONE" >/dev/null \
-      || say "Could not update automatically; edit it with: ${HCMD[*]} cron edit $existing"
+      || say "Could not update automatically; edit it with: $SHOW cron edit $existing"
   else
     say "Creating cron job '$JOB_NAME' ($SCHEDULE $TIMEZONE → $DELIVER)"
     "${HCMD[@]}" cron create "$SCHEDULE" \
@@ -212,10 +224,10 @@ fi
 
 echo
 if (( NEED_RESTART )); then
-  say "Restart the Hermes gateway once so Telegram picks up native tables: ${HCMD[*]} gateway restart"
+  say "Restart the Hermes gateway once so Telegram picks up native tables: $SHOW gateway restart"
 fi
 if (( CHECK_RC == 0 )); then
-  say "Done. Test a real delivery now with: ${HCMD[*]} cron run <job id from '${HCMD[*]} cron list'>"
+  say "Done. Test a real delivery now with: $SHOW cron run <job id from '$SHOW cron list'>"
 else
   say "Installed, but OCI permissions are not ready yet (see the preflight output above)."
   say "After the IAM setup, verify with: $PY $SCRIPTS_DIR/$SCRIPT_NAME --check"
