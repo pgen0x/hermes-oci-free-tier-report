@@ -52,7 +52,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 
 def load_conf() -> None:

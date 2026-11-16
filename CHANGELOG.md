@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org/). The version lives in two places that must move
 together: `__version__` in `oci_free_tier_report.py` and `version:` in `skills/oci-free-tier-report/SKILL.md`.
 
+## [1.2.1] — 2026-11-16
+
+### Fixed
+- Install and clone URLs in README / SKILL.md pointed at a repository name that does not exist (the rename was
+  blocked on GitHub), so agent installs from v1.2.0 docs failed. Use `pgen0x/hermes-oci-free-tier-report`.
+
 ## [1.2.0] — 2026-11-16
 
 ### Added
