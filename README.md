@@ -113,6 +113,11 @@ The preflight prints these steps with your instance OCID filled in:
 
 Dynamic groups and policies are free. Everything is read-only.
 
+**Skipped this step?** Nothing breaks. Until the permissions exist, the daily message is this setup guide (with the
+VM's instance OCID filled in and the policy lines in copyable code blocks) instead of a report. Once the policy is
+in place the next scheduled run sends the normal report — no reinstall needed. This step can't be automated from the
+VM: an instance cannot grant permissions to itself, a tenancy administrator has to create them.
+
 **Not running on an OCI VM?** Put an API key in `~/.oci/config` and add `OCI_AUTH=config` to `oci_free_tier_report.conf`.
 Grant that user's group the same two `read` statements.
 

@@ -127,6 +127,7 @@ class Report:
     sections: list[Section] = field(default_factory=list)
     alerts: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    setup_needed: bool = False  # every check failed on authorization → show IAM setup guide instead
 
 
 def level(used: float, limit: float) -> str:
@@ -551,13 +552,17 @@ def build_report() -> Report:
         ("Idle", lambda: collect_idle(ctx, rep, running)),
         ("Other", lambda: collect_other(ctx, rep)),
     ]
+    auth_failures = 0
     for name, fn in steps:
         try:
             fn()
         except Exception as e:
             rep.errors.append(f"{name}: {short_err(e)}")
+            if isinstance(e, oci.exceptions.ServiceError) and e.status in (401, 403, 404):
+                auth_failures += 1
             if os.environ.get("REPORT_DEBUG"):
                 traceback.print_exc(file=sys.stderr)
+    rep.setup_needed = auth_failures == len(steps)
     return rep
 
 
@@ -651,9 +656,60 @@ def render_json(rep: Report) -> str:
     return json.dumps(asdict(rep), indent=2, default=str)
 
 
+def setup_steps(markdown: bool) -> list[str]:
+    """One-time IAM setup instructions, with this VM's instance OCID filled in when available."""
+    if os.environ.get("OCI_AUTH", "instance_principal") == "config":
+        stmts = [
+            "Allow group <your group> to read usage-report in tenancy",
+            "Allow group <your group> to read all-resources in tenancy",
+        ]
+        intro = ["Grant the group of the API-key user these policy statements (root compartment):"]
+        return intro + ((["```"] + stmts + ["```"]) if markdown else [f"  {x}" for x in stmts])
+    instance_id = _imds("instance/id")
+    rule = f"instance.id = '{instance_id}'" if instance_id else "instance.compartment.id = '<compartment OCID>'"
+    stmts = [
+        "Allow dynamic-group oci-free-tier-report to read usage-report in tenancy",
+        "Allow dynamic-group oci-free-tier-report to read all-resources in tenancy",
+    ]
+    block = (lambda lines: ["```"] + lines + ["```"]) if markdown else (lambda lines: [f"     {x}" for x in lines])
+    b = (lambda t: f"**{t}**") if markdown else (lambda t: t)
+    return [
+        "One-time setup in the OCI Console (free, read-only), as a tenancy administrator:",
+        "",
+        f"1. {b('Identity & Security → Domains → Default → Dynamic groups → Create dynamic group')}",
+        "   Name: oci-free-tier-report",
+        "   Matching rule:",
+        *block([rule]),
+        "   (Older tenancies without identity domains: Identity → Dynamic Groups.)",
+        "",
+        f"2. {b('Identity & Security → Policies →')} pick the {b('root')} compartment {b('→ Create policy')}",
+        "   Name: oci-free-tier-report-read — statements:",
+        *block(stmts),
+        "",
+        "3. Wait 1–5 minutes. The next scheduled report fills in automatically.",
+    ]
+
+
+def render_setup(rep: Report, markdown: bool) -> str:
+    icons = _icons()
+    when = dt.datetime.fromisoformat(rep.generated_at)
+    b = (lambda t: f"**{t}**") if markdown else (lambda t: t)
+    out = [
+        b(f"OCI Always Free · {when:%a %d %b %Y}"),
+        f"{rep.region} · {when:%H:%M} {rep.timezone}",
+        "",
+        f"{icons['error']} {b('Oracle permissions are not set up yet')} — this VM can sign in to OCI but is not "
+        "allowed to read usage, so no checks could run.",
+        "",
+    ]
+    return "\n".join(out + setup_steps(markdown))
+
+
 def render(rep: Report, fmt: str) -> str:
     if fmt == "json":
         return render_json(rep)
+    if rep.setup_needed:
+        return render_setup(rep, markdown=fmt in ("markdown", "mono", "table"))
     if fmt in ("mono", "table"):  # "table" = v1.0 name
         return render_mono(rep, fenced=True)
     if fmt == "plain":
@@ -714,31 +770,7 @@ def preflight() -> int:
     if not missing:
         print("\nAll permissions OK. Ready.")
         return 0
-    if auth == "instance_principal":
-        rule = f"instance.id = '{instance_id}'" if instance_id else "instance.compartment.id = '<compartment OCID>'"
-        print(
-            f"""
-Missing permissions. One-time setup in the OCI Console (free, read-only):
-
-1. Identity & Security → Domains → Default → Dynamic groups → Create dynamic group
-     Name : oci-free-tier-report
-     Rule : {rule}
-   (Older tenancies without identity domains: Identity → Dynamic Groups.)
-
-2. Identity & Security → Policies → select the ROOT compartment → Create policy
-     Name : oci-free-tier-report-read
-     Statements:
-       Allow dynamic-group oci-free-tier-report to read usage-report in tenancy
-       Allow dynamic-group oci-free-tier-report to read all-resources in tenancy
-
-3. Wait 1-5 minutes for IAM to propagate, then re-run this check."""
-        )
-    else:
-        print(
-            "\nGrant the API-key user's group:\n"
-            "  Allow group <group> to read usage-report in tenancy\n"
-            "  Allow group <group> to read all-resources in tenancy"
-        )
+    print("\nMissing permissions.", *setup_steps(markdown=False), sep="\n")
     return 3
 
 

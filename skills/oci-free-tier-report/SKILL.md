@@ -30,6 +30,9 @@ Runs as a `--no-agent` cron job: zero tokens per run, the script's stdout is del
      When they say it's done, re-check with
      `~/.local/share/hermes-oci-free-tier-report/venv/bin/python <profile scripts dir>/oci_free_tier_report.py --check`,
      then run the job once.
+     If the user can't do it right now, that's fine: the cron job is already installed and each daily message
+     will be this setup guide until the permissions exist, then it turns into the normal report by itself.
+     You cannot create the IAM policy yourself — the VM has no admin rights; only the user can, in the Console.
    - `1` → read the error; most common: Hermes profile name wrong, or `python3-venv` missing (needs sudo — ask the user).
 
 The cron job, schedule and target are now owned by Hermes cron. Do not wrap it in an agent prompt — the point is no LLM.
