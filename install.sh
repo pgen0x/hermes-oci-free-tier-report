@@ -18,6 +18,7 @@ CREATE_CRON=1
 UNINSTALL=0
 SKIP_CHECK=0
 FORMAT=""
+LANG_CODE=""
 TELEGRAM_RICH=1
 UNWRAP=0
 NEED_RESTART=0
@@ -33,6 +34,7 @@ Options:
   --schedule CRON    cron expression (default: "0 7 * * *")
   --timezone TZ      IANA timezone for the schedule (default: system timezone)
   --name NAME        cron job name (default: "OCI Always Free Usage Report")
+  --lang CODE        report language: en (default), id, or any locales/<CODE>.json in this repo
   --format FMT       markdown | mono | plain | json (default: picked from --deliver platform —
                      markdown for Telegram/Slack/Signal/Matrix, mono for Discord/WhatsApp, plain for SMS/email/IRC)
   --no-telegram-rich do not enable Telegram Rich Messages (native tables) in the profile config
@@ -52,6 +54,7 @@ while [[ $# -gt 0 ]]; do
     --timezone) TIMEZONE="$2"; shift 2 ;;
     --name) JOB_NAME="$2"; shift 2 ;;
     --format) FORMAT="$2"; shift 2 ;;
+    --lang) LANG_CODE="$2"; shift 2 ;;
     --no-telegram-rich) TELEGRAM_RICH=0; shift ;;
     --unwrap) UNWRAP=1; shift ;;
     --no-cron) CREATE_CRON=0; shift ;;
@@ -68,6 +71,7 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="oci_free_tier_report.py"
 CONF_NAME="oci_free_tier_report.conf"
+LOCALES_NAME="oci_free_tier_report_locales"
 # Hermes root. Inside a profile session HERMES_HOME points at <root>/profiles/<name>, not at the root.
 HERMES_ROOT="${HERMES_HOME:-$HOME/.hermes}"
 HERMES_ROOT="${HERMES_ROOT%/}"
@@ -109,6 +113,7 @@ if (( UNINSTALL )); then
     "${HCMD[@]}" cron remove "$id" >/dev/null
   done
   rm -f "$SCRIPTS_DIR/$SCRIPT_NAME" "$SCRIPTS_DIR/$CONF_NAME"
+  rm -rf "${SCRIPTS_DIR:?}/$LOCALES_NAME"
   say "Removed $SCRIPTS_DIR/$SCRIPT_NAME"
   others="$(find "$HERMES_ROOT/scripts" "$HERMES_ROOT"/profiles/*/scripts -maxdepth 1 \
     -name "$SCRIPT_NAME" 2>/dev/null || true)"
@@ -142,6 +147,12 @@ fi
 # 2. script into the profile -----------------------------------------------------------
 mkdir -p "$SCRIPTS_DIR"
 install -m 0755 "$SRC_DIR/$SCRIPT_NAME" "$SCRIPTS_DIR/$SCRIPT_NAME"
+# Locale files travel with the script (the script looks in <scripts>/oci_free_tier_report_locales/).
+rm -rf "${SCRIPTS_DIR:?}/$LOCALES_NAME"
+mkdir -p "$SCRIPTS_DIR/$LOCALES_NAME"
+if compgen -G "$SRC_DIR/locales/*.json" >/dev/null; then
+  install -m 0644 "$SRC_DIR"/locales/*.json "$SCRIPTS_DIR/$LOCALES_NAME/"
+fi
 say "Installed $SCRIPTS_DIR/$SCRIPT_NAME"
 
 if [[ -z "$TIMEZONE" ]]; then
@@ -165,7 +176,20 @@ set_conf() {  # set_conf KEY VALUE — update or append in the profile's conf fi
 }
 set_conf REPORT_FORMAT "$FORMAT"
 set_conf REPORT_TZ "$TIMEZONE"
-say "Settings: $SCRIPTS_DIR/$CONF_NAME (REPORT_FORMAT=$FORMAT, REPORT_TZ=$TIMEZONE)"
+if [[ -n "$LANG_CODE" ]]; then
+  if [[ "$LANG_CODE" != "en" ]]; then
+    [[ -f "$SCRIPTS_DIR/$LOCALES_NAME/$LANG_CODE.json" ]] || die "No locale '$LANG_CODE' (looked for $SRC_DIR/locales/$LANG_CODE.json). \
+Create it first: $PY $SRC_DIR/$SCRIPT_NAME --dump-locale > $SRC_DIR/locales/$LANG_CODE.json, translate the values, \
+then re-run with --lang $LANG_CODE."
+    "$PY" "$SCRIPTS_DIR/$SCRIPT_NAME" --check-locale "$LANG_CODE" \
+      || die "locales/$LANG_CODE.json is incomplete or has broken placeholders (see above)."
+  fi
+  set_conf REPORT_LANG "$LANG_CODE"
+elif ! grep -q '^REPORT_LANG=' "$SCRIPTS_DIR/$CONF_NAME"; then
+  set_conf REPORT_LANG en
+fi
+REPORT_LANG_NOW="$(sed -n 's/^REPORT_LANG=//p' "$SCRIPTS_DIR/$CONF_NAME")"
+say "Settings: $SCRIPTS_DIR/$CONF_NAME (REPORT_FORMAT=$FORMAT, REPORT_TZ=$TIMEZONE, REPORT_LANG=$REPORT_LANG_NOW)"
 
 # Telegram only renders GFM tables natively via Bot API Rich Messages, which Hermes keeps opt-in
 # (platforms.telegram.extra.rich_messages). Without it, tables degrade to plain text.
