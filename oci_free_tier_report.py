@@ -51,7 +51,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 
 def load_conf() -> None:
@@ -115,6 +115,7 @@ class Section:
     title: str
     columns: list[str]  # header for the label column + each value column
     rows: list[Row] = field(default_factory=list)
+    note: str = ""  # plain-language explanation shown under the table
 
 
 @dataclass
@@ -234,6 +235,26 @@ def collect_compute(ctx: Ctx, rep: Report) -> list:
             ],
         )
     )
+    sec = rep.sections[-1]
+    free_ocpu = LIMITS["a1_ocpu"] - ctx.a1_live_ocpu
+    free_mem = LIMITS["a1_mem_gb"] - ctx.a1_live_mem
+    if free_ocpu < 0 or free_mem < 0:
+        sec.note = (
+            f"Running A1 capacity ({num(ctx.a1_live_ocpu)} OCPU / {num(ctx.a1_live_mem)} GB) is above the free "
+            "4 OCPU / 24 GB — the extra is billed. Shrink or stop an A1 instance."
+        )
+    elif free_ocpu == 0 or free_mem == 0:
+        sec.note = (
+            f"A1 is at the free cap ({num(ctx.a1_live_ocpu)} OCPU / {num(ctx.a1_live_mem)} GB) — still free, "
+            "but any new or bigger A1 instance would be billed."
+        )
+    else:
+        sec.note = (
+            f"A1 uses {num(ctx.a1_live_ocpu)} of 4 OCPU and {num(ctx.a1_live_mem)} of 24 GB — "
+            f"{num(free_ocpu)} OCPU / {num(free_mem)} GB still free to use."
+        )
+    if micro:
+        sec.note += f" {micro} of 2 free E2.1.Micro VMs in use."
     if ctx.a1_live_ocpu > LIMITS["a1_ocpu"] or ctx.a1_live_mem > LIMITS["a1_mem_gb"]:
         rep.alerts.append("Live A1 capacity exceeds 4 OCPU / 24 GB.")
     if micro > LIMITS["micro_count"]:
@@ -282,6 +303,11 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
         rep.alerts.append(
             f"You were charged {num(mtd, 2)} {rep.currency} this month — something is outside Always Free!"
         )
+        sec.note = "Something billable is running — the rows above show which service is charging you."
+    else:
+        sec.note = (
+            "Billed cost from Oracle's Usage API (data lags a few hours). 0.00 means you are not paying anything."
+        )
     rep.sections.insert(0, sec)
 
     # A1 hours: billed month-to-date + currently-live capacity for the rest of the month
@@ -312,6 +338,13 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
         )
         if proj > LIMITS[key]:
             rep.alerts.append(f"A1 {label} projected to exceed the monthly free quota.")
+    proj_ocpu = a1_ocpu_h + ctx.a1_live_ocpu * hours_left
+    max_ocpu = LIMITS["a1_ocpu"] * (next_month - month_start).days * 24
+    hours.note = (
+        f"Free monthly quota: 3,000 OCPU-h + 18,000 GB-h. Used so far {num(a1_ocpu_h)} OCPU-h; at the current size "
+        f"the month ends at ~{num(proj_ocpu)}. A 4 OCPU / 24 GB A1 running 24/7 needs at most "
+        f"{num(max_ocpu)} OCPU-h this month, so it never runs over. Resets on the 1st."
+    )
     # place right after Compute when present
     idx = next((n + 1 for n, s in enumerate(rep.sections) if s.title == "Compute"), len(rep.sections))
     rep.sections.insert(idx, hours)
@@ -350,6 +383,17 @@ def collect_storage(ctx: Ctx, rep: Report) -> None:
             ],
         )
     )
+    sec = rep.sections[-1]
+    left = LIMITS["block_gb"] - vol_gb
+    if left < 0:
+        sec.note = f"Volumes total {vol_gb} GB, {-left} GB over the free 200 GB — delete or shrink a volume."
+    elif left == 0:
+        sec.note = (
+            "Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume. "
+        )
+    else:
+        sec.note = f"{left} GB of the free 200 GB block storage still available. "
+    sec.note += f"Backups {backups}/5, Object Storage {num(obj / GB, 2)}/20 GB."
     if vol_gb > LIMITS["block_gb"] or backups > LIMITS["backups"]:
         rep.alerts.append("Block storage or backups exceed the Always Free limit.")
     if obj / GB > LIMITS["object_gb"]:
@@ -382,6 +426,10 @@ def collect_network(ctx: Ctx, rep: Report) -> None:
             [limit_row("Egress MTD (GB)", egress / GB, LIMITS["egress_gb"], nd=2)],
         )
     )
+    rep.sections[-1].note = (
+        f"Outbound traffic this month: {num(egress / GB, 2)} GB of the free 10 TB "
+        f"({num(100 * egress / GB / LIMITS['egress_gb'], 3)}%). Counted from VNIC metrics, so slightly overstated."
+    )
     if egress / GB > LIMITS["egress_gb"]:
         rep.alerts.append("Outbound data transfer exceeds 10 TB this month.")
 
@@ -397,26 +445,42 @@ def collect_idle(ctx: Ctx, rep: Report, running: list) -> None:
             )
     sec = Section("Idle", ["Idle 7d p95", "CPU %", "RAM %"])
     fmt = lambda v: "n/a" if math.isnan(v) else num(v, 1)  # noqa: E731
+    notes = [
+        "Oracle may reclaim an Always Free VM (Free Tier accounts) when its 7-day p95 CPU is under 20% "
+        "and, on A1, RAM is also under 20%."
+    ]
     for i in running:
         st = stats.get(i.id, {})
         cpu = st.get("CpuUtilization", math.nan)
         mem = st.get("MemoryUtilization", math.nan)
         is_a1 = i.shape == "VM.Standard.A1.Flex"
+        thr = LIMITS["idle_pct"]
+        low = lambda v: "below" if v < thr else "above"  # noqa: E731
         if math.isnan(cpu):
             status = "info"  # no Oracle Cloud Agent metrics
-        elif cpu < LIMITS["idle_pct"] and (not is_a1 or (not math.isnan(mem) and mem < LIMITS["idle_pct"])):
+            notes.append(f"{i.display_name}: no metrics — enable the Oracle Cloud Agent monitoring plugin.")
+        elif cpu < thr and (not is_a1 or (not math.isnan(mem) and mem < thr)):
             status = "high"
             rep.alerts.append(
                 f"'{i.display_name}' is idle by Oracle's rule (7-day p95 < 20%) — "
                 "Free Tier accounts may get it reclaimed."
             )
+            notes.append(
+                f"{i.display_name}: CPU {fmt(cpu)}% and RAM {fmt(mem)}% are both under 20% → at risk of reclaim."
+            )
         else:
             status = "ok"
+            why = (
+                f"CPU {fmt(cpu)}% ({low(cpu)} 20%)"
+                + (f", RAM {fmt(mem)}% ({low(mem)} 20%)" if is_a1 and not math.isnan(mem) else "")
+            )
+            notes.append(f"{i.display_name}: {why} → safe.")
         sec.rows.append(
             Row([i.display_name, fmt(cpu), fmt(mem)], status, {"cpu_p95": cpu, "mem_p95": mem, "id": i.id})
         )
     if not running:
         sec.rows.append(Row(["no running VM", "", ""], "info"))
+    sec.note = " ".join(notes)
     rep.sections.append(sec)
 
 
@@ -453,6 +517,11 @@ def collect_other(ctx: Ctx, rep: Report) -> None:
     if adb_paid:
         sec.rows.append(limit_row("Paid ADBs", adb_paid, 0))
         rep.alerts.append(f"{adb_paid} Autonomous Database(s) are not Always Free.")
+    used = [f"{n} {what}" for n, what in ((lbs, "load balancer"), (nlbs, "network LB"), (adb_free, "free Autonomous DB")) if n]
+    sec.note = (
+        "Free: 1 load balancer (10 Mbps), 1 network LB, 2 Autonomous DBs. "
+        + (f"In use: {', '.join(used)}." if used else "None in use.")
+    )
     rep.sections.append(sec)
     if lbs > LIMITS["lb"] or nlbs > LIMITS["nlb"] or adb_free > LIMITS["adb"]:
         rep.alerts.append("Load balancer / NLB / Autonomous DB count exceeds the free limit.")
@@ -529,14 +598,17 @@ def render_markdown(rep: Report) -> str:
         for r in sec.rows:
             cells = [c.replace("|", "/") for c in r.cells] + [icons[r.status]]
             out.append("| " + " | ".join(cells) + " |")
+        if sec.note:
+            out += ["", f"_{sec.note}_"]
     return "\n".join(out + _footer(rep))
 
 
 def render_mono(rep: Report, fenced: bool) -> str:
     """Monospace table, label column trimmed so each row fits MONO_MAX_WIDTH characters."""
     icons = _icons()
-    tbl: list[str] = []
+    body: list[str] = []
     for sec in rep.sections:
+        tbl: list[str] = []
         ncol = len(sec.columns)
         vw = [max(len(sec.columns[c]), *(len(r.cells[c]) for r in sec.rows)) for c in range(1, ncol)]
         lw = max(len(sec.columns[0]), *(len(r.cells[0]) for r in sec.rows))
@@ -546,14 +618,14 @@ def render_mono(rep: Report, fenced: bool) -> str:
             s = s if len(s) <= w else s[: w - 1] + "…"
             return s.ljust(w) if left else s.rjust(w)
 
-        if tbl:
-            tbl.append("")
         tbl.append(" ".join([fit(sec.columns[0].upper(), lw, True)] + [fit(h, w, False) for h, w in zip(sec.columns[1:], vw)]))
         for r in sec.rows:
             line = " ".join([fit(r.cells[0], lw, True)] + [fit(v, w, False) for v, w in zip(r.cells[1:], vw)])
             tbl.append(f"{line} {icons[r.status]}".rstrip())
-    body = (["```"] + tbl + ["```"]) if fenced else tbl
-    return "\n".join(_header(rep, bold=fenced) + [""] + body + _footer(rep))
+        body += [""] + ((["```"] + tbl + ["```"]) if fenced else tbl)
+        if sec.note:
+            body.append(sec.note)
+    return "\n".join(_header(rep, bold=fenced) + body + _footer(rep))
 
 
 def render_json(rep: Report) -> str:
