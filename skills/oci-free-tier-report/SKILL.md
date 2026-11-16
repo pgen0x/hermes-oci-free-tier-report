@@ -1,7 +1,7 @@
 ---
 name: oci-free-tier-report
 description: "Daily OCI Always Free usage report as a no-agent cron."
-version: 1.2.1
+version: 1.3.0
 author: pgen0x
 license: MIT
 platforms: [linux]
@@ -35,14 +35,17 @@ not an OCI instance (the preflight prints `OCI instance : not detected`), stop a
 2. **Pick the profile.** Use the profile you are running as. Inside a Hermes session the installer detects it
    from `HERMES_HOME` automatically; passing `--profile <name>` explicitly is still fine.
 3. **Pick the time.** Default 07:00 in the user's timezone; confirm in one line, don't interrogate.
-4. Clone and run the installer from a terminal:
+4. **Pick the language.** Default to the language the user is chatting in. Bundled: `en`, `id`
+   (`ls ~/.local/src/hermes-oci-free-tier-report/locales`). For any other language, follow
+   "Adding a language" below **before** running the installer.
+5. Clone and run the installer from a terminal:
    ```bash
    git clone --depth 1 https://github.com/pgen0x/hermes-oci-free-tier-report ~/.local/src/hermes-oci-free-tier-report \
      || git -C ~/.local/src/hermes-oci-free-tier-report pull --ff-only
    ~/.local/src/hermes-oci-free-tier-report/install.sh \
-     --profile <profile> --deliver <target> --schedule "0 7 * * *" --timezone <IANA tz>
+     --profile <profile> --deliver <target> --schedule "0 7 * * *" --timezone <IANA tz> --lang <code>
    ```
-5. Read the installer's exit code:
+6. Read the installer's exit code:
    - `0` → permissions OK. Run the job once (`hermes [-p <profile>] cron run <id>`) so the user sees a real report.
    - `3` → OCI IAM is not set up yet. Send the user the **exact** "One-time setup in the OCI Console" block the
      preflight printed (it contains their own instance OCID). Do not paraphrase the policy statements.
@@ -56,6 +59,28 @@ not an OCI instance (the preflight prints `OCI instance : not detected`), stop a
 
 The cron job, schedule and target are now owned by Hermes cron. Do not wrap it in an agent prompt — the point is no LLM.
 
+## Adding a language
+The daily run never uses an LLM; you translate **once**, at install time.
+```bash
+R=~/.local/src/hermes-oci-free-tier-report
+PY=~/.local/share/hermes-oci-free-tier-report/venv/bin/python   # exists after a first install.sh run
+$PY $R/oci_free_tier_report.py --dump-locale > $R/locales/<code>.json
+```
+Then edit `$R/locales/<code>.json`:
+- translate the **values** only; keep every key and every `{placeholder}` exactly;
+- set `_language`, `num.thousands` / `num.decimal`, 7 `date.weekdays` and 12 `date.months` (comma-separated),
+  and `date.format` for that language;
+- do **not** translate OCI identifiers: shape names, `OCPU`, `GB-h`, `A1`, Console menu paths in `setup.step1` /
+  `setup.step2`, and the `Name:` / `Matching rule:` / `statements:` labels the user must match in the Console;
+- keep row labels short (≤ 15 characters) so the `mono` table fits a phone.
+
+Validate, then install with it:
+```bash
+$PY $R/oci_free_tier_report.py --check-locale <code>     # must print "is complete"
+$R/install.sh --profile <profile> --deliver <target> --lang <code>
+```
+Offer the user to contribute the file upstream (a PR adding `locales/<code>.json`).
+
 ## Output format
 `install.sh` picks it from `--deliver`: `markdown` (GFM tables → native tables on Telegram, aligned on
 Slack/Signal/Matrix), `mono` (code-block table for Discord/WhatsApp), `plain` (SMS/email/IRC).
@@ -63,7 +88,8 @@ For Telegram the installer also sets `platforms.telegram.extra.rich_messages: tr
 if it prints "Restart the Hermes gateway", run `hermes [-p <profile>] gateway restart` (restarts only that
 profile; without `-y` it refuses to interrupt live work). Override the format with `--format`.
 Other settings go in `oci_free_tier_report.conf` next to the installed script:
-`REPORT_ASCII=1` (no emoji), `REPORT_QUIET=1` (alerts only), `REPORT_TZ=<IANA tz>`.
+`REPORT_LANG=<code>`, `REPORT_ASCII=1` (no emoji), `REPORT_QUIET=1` (alerts only), `REPORT_TZ=<IANA tz>`.
+To switch language later, re-run `install.sh` with `--lang <code>` (it validates the locale first).
 
 ## Cron header
 Hermes wraps cron output in `Cronjob Response: <name> (job_id: …)` + a footer; on Telegram tables it shows as a

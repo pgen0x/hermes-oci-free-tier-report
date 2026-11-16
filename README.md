@@ -14,6 +14,8 @@ the free limit.
 - **No API keys on disk.** Authenticates as the VM itself (OCI instance principal) with a read-only policy.
 - **Plain-language warnings.** Green sections stay quiet; anything near or over a limit gets a note telling you
   what it means and what not to do.
+- **Your language.** English and Bahasa Indonesia built in; your Hermes bot can add any other language once at
+  install time — the daily report still uses no AI.
 - **One sentence to install.** Ask your Hermes bot to install it and it sets up the cron job in the current chat.
 
 > **Requirement: runs only on an OCI compute instance.** Hermes must be installed on the Oracle Cloud VM you want
@@ -26,6 +28,7 @@ the free limit.
 - [Manual install](#manual-install)
 - [One-time OCI permission setup](#one-time-oci-permission-setup)
 - [Oracle Always Free limits checked](#oracle-always-free-limits-checked)
+- [Languages](#languages)
 - [FAQ](#faq)
 - [Options](#options) · [Manage](#manage) · [How authentication works](#how-authentication-works)
 
@@ -99,6 +102,7 @@ More examples:
 ./install.sh --deliver telegram:-1001234567890 --schedule "30 8 * * *" --timezone Asia/Jakarta
 ./install.sh --deliver whatsapp:6281234567890@s.whatsapp.net   # → mono format
 ./install.sh --deliver telegram --format mono                     # override the automatic format
+./install.sh --deliver telegram --lang id                         # report in Bahasa Indonesia
 ./install.sh --deliver telegram --unwrap                          # drop Hermes' "Cronjob Response" header
 ./install.sh --no-cron                                            # install + permission check only
 ./install.sh --uninstall --profile work
@@ -162,6 +166,28 @@ administrator has to create them.
 
 Limits follow Oracle's [Always Free resources](https://docs.oracle.com/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) documentation.
 
+## Languages
+
+Built in: **English** (`en`, default) and **Bahasa Indonesia** (`id`) — numbers, dates, tables, notes and the
+setup guide are all localized. Pick one with `install.sh --lang <code>` (or `REPORT_LANG` in
+`oci_free_tier_report.conf`).
+
+**Any other language:** ask your Hermes bot for it when installing ("…daily report in Japanese"). Following the
+skill, it generates `locales/<code>.json` once from the English template, validates it with `--check-locale`, and
+installs with `--lang <code>`. The daily run stays LLM-free. Manually:
+
+```bash
+PY=~/.local/share/hermes-oci-free-tier-report/venv/bin/python
+$PY oci_free_tier_report.py --dump-locale > locales/ja.json   # English template
+# translate the values; keep keys and {placeholders}
+$PY oci_free_tier_report.py --check-locale ja
+./install.sh --deliver telegram --lang ja
+```
+
+Missing or broken keys fall back to English, so a partial translation never breaks the report. OCI identifiers
+(shape names, OCPU, GB-h, Console menu paths, IAM policy statements) are intentionally left in English so they
+match what you see and paste in the Oracle Console. Pull requests adding `locales/<code>.json` are welcome.
+
 ## FAQ
 
 **Will I be charged if my Ampere A1 shows 4/4 OCPU?**
@@ -195,6 +221,7 @@ override it). `install.sh --format` and `--timezone` write it for you.
 
 | Setting | Effect |
 |---|---|
+| `REPORT_LANG=id` | report language (`en` default, `id`, or any `locales/<code>.json`) |
 | `REPORT_FORMAT=markdown` | GFM tables — native on Telegram, aligned on Slack/Signal/Matrix (default for those) |
 | `REPORT_FORMAT=mono` | monospace table in a code block — default for Discord and WhatsApp |
 | `REPORT_FORMAT=plain` | monospace table without code fences — SMS, email, IRC |
