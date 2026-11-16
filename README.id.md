@@ -146,7 +146,7 @@ Menjalankan ulang installer tetap mempertahankan cron job, jadwal, dan pengatura
 Atau cukup minta ke bot: "update skill OCI free tier report". Dari git checkout: `git pull`, lalu jalankan ulang
 `install.sh` dengan cara yang sama.
 
-**Upgrade dari 1.3.x atau lebih lama** (ter-install dari clone di `~/.local/src/hermes-oci-free-tier-report`):
+**Upgrade dari install lama via clone** (di `~/.local/src/hermes-oci-free-tier-report`):
 install skill seperti di atas, jalankan ulang `install.sh`-nya dengan `--deliver` yang sama, lalu hapus clone lama.
 Kalau bot kamu pernah menyalin `SKILL.md` ke folder `skills/` secara manual, hapus folder itu dulu sebelum
 `hermes skills install`.

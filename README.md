@@ -145,7 +145,7 @@ Re-running the installer keeps the cron job, its schedule and your settings (lan
 Or just ask your bot: "update the OCI free tier report skill". From a git checkout: `git pull`, then re-run
 `install.sh` the same way.
 
-**Upgrading from 1.3.x or older** (installed from a clone in `~/.local/src/hermes-oci-free-tier-report`): install the
+**Upgrading from an early clone install** (in `~/.local/src/hermes-oci-free-tier-report`): install the
 skill as above, re-run its `install.sh` with the same `--deliver`, then delete the old clone. If your bot copied
 `SKILL.md` into its `skills/` folder by hand, delete that folder before `hermes skills install`.
 

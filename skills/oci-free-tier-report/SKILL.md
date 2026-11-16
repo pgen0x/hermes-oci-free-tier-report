@@ -1,7 +1,7 @@
 ---
 name: oci-free-tier-report
 description: "Daily OCI Always Free usage report as a no-agent cron."
-version: 1.4.0
+version: 0.1.0
 author: pgen0x
 license: MIT
 platforms: [linux]
@@ -113,7 +113,7 @@ cron jobs in that profile lose the header too — say so).
 - Update: `hermes [-p <profile>] skills check` → `hermes [-p <profile>] skills update oci-free-tier-report`, then
   re-run `bash "$SKILL_DIR/install.sh" --profile <profile> --deliver <target>` so the new script reaches the
   profile's `scripts/` (the cron job and settings are kept; `--lang` is remembered).
-- Migrating from 1.3.x or older (installed from `~/.local/src/hermes-oci-free-tier-report`): install the skill from
+- Migrating from an early clone install (from `~/.local/src/hermes-oci-free-tier-report`): install the skill from
   the hub (step 0), re-run its `install.sh` with the same `--deliver`, then the old clone can be deleted.
 - Change time/target: `hermes [-p <profile>] cron edit <id> --schedule ... --deliver ...`
 - Remove: `bash "$SKILL_DIR/install.sh" --uninstall --profile <profile>`, then
