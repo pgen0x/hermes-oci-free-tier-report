@@ -41,8 +41,8 @@ add `OCI_AUTH=config` to `oci_free_tier_report.conf` (next to the installed scri
 `install.sh` picks it from `--deliver`: `markdown` (GFM tables → native tables on Telegram, aligned on
 Slack/Signal/Matrix), `mono` (code-block table for Discord/WhatsApp), `plain` (SMS/email/IRC).
 For Telegram the installer also sets `platforms.telegram.extra.rich_messages: true` (Hermes default is off);
-if it prints "Restart the Hermes gateway", ask the user before running `hermes gateway restart` — it briefly
-disconnects every profile the gateway serves. Override the format with `--format`. Other settings go in `oci_free_tier_report.conf`:
+if it prints "Restart the Hermes gateway", run `hermes [-p <profile>] gateway restart` (restarts only that
+profile; without `-y` it refuses to interrupt live work). Override the format with `--format`. Other settings go in `oci_free_tier_report.conf`:
 `REPORT_ASCII=1` (no emoji), `REPORT_QUIET=1` (alerts only), `REPORT_TZ=<IANA tz>`.
 
 ## Maintain

@@ -203,7 +203,7 @@ fi
 
 echo
 if (( NEED_RESTART )); then
-  say "Restart the Hermes gateway once so Telegram picks up native tables: hermes gateway restart"
+  say "Restart the Hermes gateway once so Telegram picks up native tables: ${HCMD[*]} gateway restart"
 fi
 if (( CHECK_RC == 0 )); then
   say "Done. Test a real delivery now with: ${HCMD[*]} cron run <job id from '${HCMD[*]} cron list'>"

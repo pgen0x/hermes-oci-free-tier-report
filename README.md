@@ -81,7 +81,7 @@ The installer:
 3. runs a **preflight** that tests every OCI permission the report needs,
 4. writes `oci_free_tier_report.conf` next to the script (output format + timezone),
    and for Telegram enables `platforms.telegram.extra.rich_messages` in the profile — Hermes keeps native
-   tables opt-in; restart the gateway once afterwards (`hermes gateway restart`),
+   tables opt-in; restart that profile once afterwards (`hermes [-p <profile>] gateway restart`),
 5. creates (or updates, if it already exists) the cron job:
    `hermes cron create "0 7 * * *" --script oci_free_tier_report.py --no-agent --interpreter <venv python> --deliver <target>`.
 
