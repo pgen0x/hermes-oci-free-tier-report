@@ -17,6 +17,7 @@ JOB_NAME="OCI Always Free Usage Report"
 CREATE_CRON=1
 UNINSTALL=0
 SKIP_CHECK=0
+FORMAT=""
 
 usage() {
   sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
@@ -29,6 +30,8 @@ Options:
   --schedule CRON    cron expression (default: "0 7 * * *")
   --timezone TZ      IANA timezone for the schedule (default: system timezone)
   --name NAME        cron job name (default: "OCI Always Free Usage Report")
+  --format FMT       markdown | mono | plain | json (default: picked from --deliver platform —
+                     markdown for Telegram/Slack/Signal/Matrix, mono for Discord/WhatsApp, plain for SMS/email/IRC)
   --no-cron          install only, do not create the cron job
   --skip-check       skip the OCI permission preflight
   --uninstall        remove the script, venv and cron job
@@ -42,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --schedule) SCHEDULE="$2"; shift 2 ;;
     --timezone) TIMEZONE="$2"; shift 2 ;;
     --name) JOB_NAME="$2"; shift 2 ;;
+    --format) FORMAT="$2"; shift 2 ;;
     --no-cron) CREATE_CRON=0; shift ;;
     --skip-check) SKIP_CHECK=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -55,6 +59,7 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="oci_free_tier_report.py"
+CONF_NAME="oci_free_tier_report.conf"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/hermes-oci-free-tier-report"
 VENV="$DATA_DIR/venv"
@@ -83,7 +88,7 @@ if (( UNINSTALL )); then
     say "Removing cron job $id"
     "${HCMD[@]}" cron remove "$id" >/dev/null
   done
-  rm -f "$SCRIPTS_DIR/$SCRIPT_NAME"
+  rm -f "$SCRIPTS_DIR/$SCRIPT_NAME" "$SCRIPTS_DIR/$CONF_NAME"
   say "Removed $SCRIPTS_DIR/$SCRIPT_NAME"
   others="$(find "$HERMES_HOME/scripts" "$HERMES_HOME"/profiles/*/scripts -maxdepth 1 \
     -name "$SCRIPT_NAME" 2>/dev/null || true)"
@@ -119,6 +124,29 @@ mkdir -p "$SCRIPTS_DIR"
 install -m 0755 "$SRC_DIR/$SCRIPT_NAME" "$SCRIPTS_DIR/$SCRIPT_NAME"
 say "Installed $SCRIPTS_DIR/$SCRIPT_NAME"
 
+if [[ -z "$TIMEZONE" ]]; then
+  TIMEZONE="$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo UTC)"
+fi
+if [[ -z "$FORMAT" ]]; then
+  case "${DELIVER%%:*}" in
+    discord|whatsapp|whatsapp_cloud|weixin|wecom|line|qqbot|dingtalk|feishu) FORMAT="mono" ;;
+    sms|email|irc|ntfy|simplex) FORMAT="plain" ;;
+    *) FORMAT="markdown" ;;  # telegram (native tables), slack, signal, matrix, mattermost, teams, ...
+  esac
+fi
+set_conf() {  # set_conf KEY VALUE — update or append in the profile's conf file
+  local f="$SCRIPTS_DIR/$CONF_NAME"
+  touch "$f"
+  if grep -q "^$1=" "$f"; then
+    sed -i "s|^$1=.*|$1=$2|" "$f"
+  else
+    echo "$1=$2" >> "$f"
+  fi
+}
+set_conf REPORT_FORMAT "$FORMAT"
+set_conf REPORT_TZ "$TIMEZONE"
+say "Settings: $SCRIPTS_DIR/$CONF_NAME (REPORT_FORMAT=$FORMAT, REPORT_TZ=$TIMEZONE)"
+
 # 3. preflight -------------------------------------------------------------------------
 CHECK_RC=0
 if (( ! SKIP_CHECK )); then
@@ -132,9 +160,6 @@ fi
 # 4. cron job --------------------------------------------------------------------------
 if (( CREATE_CRON )); then
   [[ -n "$DELIVER" ]] || die "--deliver is required to create the cron job (or pass --no-cron)."
-  if [[ -z "$TIMEZONE" ]]; then
-    TIMEZONE="$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo UTC)"
-  fi
   existing="$(find_job_ids | head -1)"
   if [[ -n "$existing" ]]; then
     say "Cron job '$JOB_NAME' already exists ($existing) — updating it"

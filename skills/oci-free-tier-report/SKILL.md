@@ -35,13 +35,13 @@ The cron job, schedule and target are now owned by Hermes cron. Do not wrap it i
 
 ## Not on an OCI VM?
 Instance-principal auth only works on an OCI instance. Elsewhere the user needs an API key in `~/.oci/config`;
-add `OCI_AUTH=config` to the profile's `.env` (Hermes loads it for no-agent jobs).
+add `OCI_AUTH=config` to `oci_free_tier_report.conf` (next to the installed script).
 
-## Options (profile `.env`)
-- `REPORT_FORMAT=plain` — no code fences (SMS, IRC, email). Default `table` works on Telegram, Discord, WhatsApp, Slack, Signal, Matrix.
-- `REPORT_ASCII=1` — OK/WARN/HIGH/OVER instead of emoji.
-- `REPORT_QUIET=1` — send only when there is an alert or an error.
-- `REPORT_TZ=Asia/Jakarta` — timezone for the report header.
+## Output format
+`install.sh` picks it from `--deliver`: `markdown` (GFM tables → native tables on Telegram, aligned on
+Slack/Signal/Matrix), `mono` (code-block table for Discord/WhatsApp), `plain` (SMS/email/IRC).
+Override with `--format`. Other settings go in `oci_free_tier_report.conf`:
+`REPORT_ASCII=1` (no emoji), `REPORT_QUIET=1` (alerts only), `REPORT_TZ=<IANA tz>`.
 
 ## Maintain
 - Update: `git -C ~/.local/src/hermes-oci-free-tier-report pull` then re-run `install.sh` with the same flags (it updates the existing job).

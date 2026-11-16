@@ -4,48 +4,37 @@ A daily **Oracle Cloud (OCI) Always Free usage report** for [Hermes](https://git
 so your free VM stays free.
 
 - **No AI / zero tokens.** Runs as a Hermes `--no-agent` cron job: pure OCI API calls, stdout is delivered verbatim.
-- **Any chat platform.** A compact monospace table that renders on Telegram, Discord, WhatsApp, Slack, Signal,
-  Matrix… — wherever your Hermes gateway delivers.
+- **Real tables on any chat platform.** Emits GFM tables that Hermes adapts per platform — native tables on
+  Telegram (Bot API Rich Messages), aligned tables on Slack/Signal/Matrix — with a phone-width monospace mode for
+  Discord and WhatsApp. The installer picks the right one from your delivery target.
 - **No secrets on disk.** Authenticates as the VM itself (OCI instance principal), read-only.
 - **Checks Oracle's Always Free terms**, not just "is it running": cost, monthly A1 hours, storage, egress,
   idle-reclaim risk, load balancers, Autonomous DBs.
 
+On Telegram this arrives as native tables:
+
+| Compute | Used | Limit | Status |
+|:---|---:|---:|:---:|
+| A1 OCPU | 4 | 4 | 🟠 |
+| A1 RAM (GB) | 24 | 24 | 🟠 |
+| E2.1.Micro VMs | 0 | 2 | ✅ |
+
+| A1 hours | Used | Proj. | Limit | Status |
+|:---|---:|---:|---:|:---:|
+| OCPU-h | 637 | 2,077 | 3,000 | ✅ |
+| GB-h | 3,824 | 12,464 | 18,000 | ✅ |
+
+…plus Cost, Storage, Network, Idle and Other tables. The `mono` format (Discord, WhatsApp) looks like:
+
 ```
-OCI Always Free · Mon 16 Nov 2026
-eu-frankfurt-1 · 07:00 CET
+COMPUTE        Used Limit
+A1 OCPU           4     4 🟠
+A1 RAM (GB)      24    24 🟠
+E2.1.Micro VMs    0     2 ✅
 
-✅ All within Always Free — cost 0
-
-COST SGD          AMOUNT     FREE
-Yesterday           0.00     0.00 ✅
-Month to date       0.00     0.00 ✅
-
-COMPUTE             USED    LIMIT
-A1 OCPU live           4        4 🟠
-A1 RAM GB live        24       24 🟠
-E2.1.Micro VMs         0        2 ✅
-A1 OCPU-h used       637    3,000 ⚪
-A1 OCPU-h proj.    2,077    3,000 ✅
-A1 GB-h used       3,824   18,000 ⚪
-A1 GB-h proj.     12,464   18,000 ✅
-
-STORAGE             USED    LIMIT
-Block+boot GB        200      200 🟠
-Volume backups         0        5 ✅
-Object Stor. GB     0.00       20 ✅
-
-NETWORK             USED    LIMIT
-Egress GB (MTD)     5.09   10,240 ✅
-
-IDLE 7d p95         CPU%     RAM%
-my-a1-vm            18.4     36.1 ✅
-
-OTHER               USED    LIMIT
-Load balancers         0        1 ✅
-Network LBs            0        1 ✅
-Autonomous DBs         0        2 ✅
-
-✅ <70%  🟡 70-90%  🟠 ≥90%  🔴 over
+A1 HOURS  Used  Proj.  Limit
+OCPU-h     637  2,077  3,000 ✅
+GB-h     3,824 12,464 18,000 ✅
 ```
 
 ## Install — the easy way
@@ -79,7 +68,8 @@ More examples:
 ```bash
 ./install.sh --profile work --deliver discord:123456789012345678
 ./install.sh --deliver telegram:-1001234567890 --schedule "30 8 * * *" --timezone Asia/Jakarta
-./install.sh --deliver whatsapp:6281234567890@s.whatsapp.net
+./install.sh --deliver whatsapp:6281234567890@s.whatsapp.net   # → mono format
+./install.sh --deliver telegram --format mono                     # override the auto choice
 ./install.sh --no-cron                             # install + permission check only
 ./install.sh --uninstall --profile work
 ```
@@ -89,7 +79,8 @@ The installer:
 1. builds a private venv with the OCI SDK at `~/.local/share/hermes-oci-free-tier-report/venv`,
 2. copies `oci_free_tier_report.py` into the profile's `scripts/` folder (Hermes only runs scripts from there),
 3. runs a **preflight** that tests every OCI permission the report needs,
-4. creates (or updates, if it already exists) the cron job:
+4. writes `oci_free_tier_report.conf` next to the script (output format + timezone),
+5. creates (or updates, if it already exists) the cron job:
    `hermes cron create "0 7 * * *" --script oci_free_tier_report.py --no-agent --interpreter <venv python> --deliver <target>`.
 
 Re-running it is safe. Exit code `3` means "installed, but OCI permissions are not set up yet".
@@ -115,7 +106,7 @@ The preflight prints these steps with your instance OCID filled in:
 
 Dynamic groups and policies are free. Everything is read-only.
 
-**Not running on an OCI VM?** Put an API key in `~/.oci/config` and add `OCI_AUTH=config` to the profile's `.env`.
+**Not running on an OCI VM?** Put an API key in `~/.oci/config` and add `OCI_AUTH=config` to `oci_free_tier_report.conf`.
 Grant that user's group the same two `read` statements.
 
 ## What is checked
@@ -147,16 +138,18 @@ The idle check needs the Oracle Cloud Agent's Compute Instance Monitoring plugin
 
 ## Options
 
-Set these in the Hermes profile's `.env` (Hermes loads it for no-agent jobs):
+Settings live in `oci_free_tier_report.conf` next to the installed script (`KEY=VALUE` lines; environment
+variables override it). `install.sh --format ...` and `--timezone ...` write it for you.
 
-| Variable | Effect |
+| Setting | Effect |
 |---|---|
-| `REPORT_FORMAT=table` | default — table inside a code block; renders on all chat apps |
-| `REPORT_FORMAT=plain` | same table without code fences (SMS, IRC, email) |
+| `REPORT_FORMAT=markdown` | GFM tables — Telegram native tables, Slack/Signal/Matrix aligned tables (default for those) |
+| `REPORT_FORMAT=mono` | monospace table in a code block — default for Discord and WhatsApp, which don't render tables |
+| `REPORT_FORMAT=plain` | monospace table without code fences — SMS, email, IRC |
 | `REPORT_FORMAT=json` | machine-readable output |
 | `REPORT_ASCII=1` | `OK / WARN / HIGH / OVER` instead of emoji |
-| `REPORT_QUIET=1` | send nothing on days when all checks pass and nothing failed |
-| `REPORT_TZ=Asia/Jakarta` | timezone for the header (default: system timezone) |
+| `REPORT_QUIET=1` | send nothing on days when all checks pass |
+| `REPORT_TZ=Asia/Jakarta` | timezone for the header |
 | `OCI_AUTH=config` | use `~/.oci/config` instead of instance principal (`OCI_CONFIG_FILE`, `OCI_PROFILE`) |
 
 ## Manage

@@ -14,4 +14,5 @@ Short version:
 - The job is `--no-agent`: never convert it into an LLM prompt job.
 
 Development: the report is a single file, `oci_free_tier_report.py` (only dependency: `oci`).
-Keep table rows ≤ 35 monospace characters so they fit a phone screen on every chat platform.
+Output is built as sections of rows, then rendered as GFM tables (`markdown`, default) or a monospace table
+(`mono`/`plain`, kept within 34 characters + status icon so it fits a phone screen).

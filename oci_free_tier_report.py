@@ -2,24 +2,29 @@
 """OCI Always Free daily usage report — pure OCI API calls, no LLM.
 
 Designed for Hermes cron `--no-agent` jobs: stdout is delivered verbatim to whatever
-platform the job targets (Telegram, Discord, WhatsApp, Slack, Signal, Matrix, email, ...).
+platform the job targets (Telegram, Discord, Slack, WhatsApp, Signal, Matrix, email, ...).
 
 Usage:
-  oci_free_tier_report.py            # report (format from REPORT_FORMAT, default "table")
-  oci_free_tier_report.py --check    # preflight: auth + IAM permission probe + setup hints
-  oci_free_tier_report.py --format json|table|plain
+  oci_free_tier_report.py                 # report
+  oci_free_tier_report.py --check         # preflight: auth + IAM permission probe + setup hints
+  oci_free_tier_report.py --format markdown|mono|plain|json
 
-Environment:
-  OCI_AUTH        instance_principal (default) | config
-  OCI_CONFIG_FILE path to OCI config when OCI_AUTH=config (default ~/.oci/config)
-  OCI_PROFILE     profile in that config (default DEFAULT)
-  REPORT_FORMAT   table (default; monospace table in a code block — renders on every chat app)
-                  plain (same table without code fences — SMS / IRC / email)
-                  json  (machine-readable)
+Settings come from environment variables, or from `oci_free_tier_report.conf` (KEY=VALUE lines)
+next to this script — install.sh writes that file. Environment variables win.
+
+  REPORT_FORMAT   markdown (default) GFM pipe tables. Hermes adapts them per platform:
+                                     Telegram → native table (Bot API Rich Messages),
+                                     Slack/Signal → aligned table, Discord → bullet list.
+                  mono               monospace table in a ``` code block (WhatsApp, Discord)
+                  plain              monospace table without fences (SMS, IRC, email)
+                  json               machine-readable
   REPORT_ASCII    1 = status words (OK/WARN/HIGH/OVER) instead of emoji
   REPORT_TZ       IANA timezone for the header (default: system local time)
   REPORT_QUIET    1 = print nothing when everything is OK (alerts-only mode)
   REPORT_DEBUG    1 = tracebacks on stderr
+  OCI_AUTH        instance_principal (default) | config
+  OCI_CONFIG_FILE path to OCI config when OCI_AUTH=config (default ~/.oci/config)
+  OCI_PROFILE     profile in that config (default DEFAULT)
 
 Always Free limits (https://docs.oracle.com/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm):
   Ampere A1 Flex   3,000 OCPU-hours + 18,000 GB-hours per month (= 4 OCPU + 24 GB 24/7)
@@ -44,14 +49,33 @@ import sys
 import traceback
 import urllib.request
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+__version__ = "1.1.0"
+
+
+def load_conf() -> None:
+    """Fill os.environ from <script>.conf (KEY=VALUE); real environment variables take precedence."""
+    conf = Path(__file__).with_suffix(".conf")
+    try:
+        lines = conf.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        os.environ.setdefault(key.strip(), val.strip().strip("'\""))
+
+
+load_conf()
 
 try:
     import oci
 except ImportError:  # pragma: no cover
     print("The `oci` Python SDK is missing. Run install.sh or: pip install oci", file=sys.stderr)
     sys.exit(2)
-
-__version__ = "1.0.0"
 
 GB = 1024**3
 LIMITS = {
@@ -75,27 +99,21 @@ IMDS = "http://169.254.169.254/opc/v2"
 
 STATUS_EMOJI = {"ok": "✅", "warn": "🟡", "high": "🟠", "over": "🔴", "info": "⚪", "error": "⚠️"}
 STATUS_ASCII = {"ok": "OK", "warn": "WARN", "high": "HIGH", "over": "OVER", "info": "--", "error": "ERR"}
-
-# Table geometry: label + used + limit = 33 monospace chars, + status → fits a phone screen.
-W_LABEL, W_USED, W_LIMIT = 15, 8, 8
+MONO_MAX_WIDTH = 34  # monospace table width budget (excluding the status icon) — fits a phone screen
 
 
 # ---------------------------------------------------------------- data model
 @dataclass
 class Row:
-    label: str
-    used: float | None
-    limit: float | None
+    cells: list[str]  # first cell = label, the rest = values (already formatted)
     status: str
-    used_s: str = ""
-    limit_s: str = ""
+    values: dict = field(default_factory=dict)  # raw numbers for JSON consumers
 
 
 @dataclass
 class Section:
     title: str
-    col_used: str = "USED"
-    col_limit: str = "LIMIT"
+    columns: list[str]  # header for the label column + each value column
     rows: list[Row] = field(default_factory=list)
 
 
@@ -133,8 +151,8 @@ def p95(values) -> float:
     return vals[round(0.95 * (len(vals) - 1))] if vals else math.nan
 
 
-def add_limit_row(sec: Section, label: str, used: float, limit: float, nd: int = 0) -> None:
-    sec.rows.append(Row(label, used, limit, level(used, limit), num(used, nd), num(limit, 0)))
+def limit_row(label: str, used: float, limit: float, nd: int = 0) -> Row:
+    return Row([label, num(used, nd), num(limit)], level(used, limit), {"used": used, "limit": limit})
 
 
 # ---------------------------------------------------------------- OCI context
@@ -188,8 +206,6 @@ class Ctx:
 
 # ---------------------------------------------------------------- collectors
 def collect_compute(ctx: Ctx, rep: Report) -> list:
-    sec = Section("COMPUTE")
-    rep.sections.append(sec)
     compute = ctx.client(oci.core.ComputeClient)
     instances = [
         i
@@ -207,9 +223,17 @@ def collect_compute(ctx: Ctx, rep: Report) -> list:
             micro += 1
         if i.shape not in FREE_SHAPES:
             rep.alerts.append(f"Instance '{i.display_name}' uses paid shape {i.shape}.")
-    add_limit_row(sec, "A1 OCPU live", ctx.a1_live_ocpu, LIMITS["a1_ocpu"])
-    add_limit_row(sec, "A1 RAM GB live", ctx.a1_live_mem, LIMITS["a1_mem_gb"])
-    add_limit_row(sec, "E2.1.Micro VMs", micro, LIMITS["micro_count"])
+    rep.sections.append(
+        Section(
+            "Compute",
+            ["Compute", "Used", "Limit"],
+            [
+                limit_row("A1 OCPU", ctx.a1_live_ocpu, LIMITS["a1_ocpu"]),
+                limit_row("A1 RAM (GB)", ctx.a1_live_mem, LIMITS["a1_mem_gb"]),
+                limit_row("E2.1.Micro VMs", micro, LIMITS["micro_count"]),
+            ],
+        )
+    )
     if ctx.a1_live_ocpu > LIMITS["a1_ocpu"] or ctx.a1_live_mem > LIMITS["a1_mem_gb"]:
         rep.alerts.append("Live A1 capacity exceeds 4 OCPU / 24 GB.")
     if micro > LIMITS["micro_count"]:
@@ -247,17 +271,18 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
             y_total += amt
     mtd = sum(by_svc.values())
 
-    sec = Section(f"COST {rep.currency}".strip(), "AMOUNT", "FREE")
-    rep.sections.insert(0, sec)
+    title = f"Cost ({rep.currency})" if rep.currency else "Cost"
+    sec = Section("Cost", [title, "Amount"])
     for label, amt in (("Yesterday", y_total), ("Month to date", mtd)):
-        sec.rows.append(Row(label, amt, 0, "ok" if amt < 0.005 else "over", num(amt, 2), "0.00"))
+        sec.rows.append(Row([label, num(amt, 2)], "ok" if amt < 0.005 else "over", {"amount": amt}))
     if mtd >= 0.005:
         for svc, amt in sorted(by_svc.items(), key=lambda kv: -kv[1]):
             if amt >= 0.005:
-                sec.rows.append(Row(f" {svc}", amt, 0, "over", num(amt, 2), ""))
+                sec.rows.append(Row([f"· {svc}", num(amt, 2)], "over", {"amount": amt}))
         rep.alerts.append(
             f"You were charged {num(mtd, 2)} {rep.currency} this month — something is outside Always Free!"
         )
+    rep.sections.insert(0, sec)
 
     # A1 hours: billed month-to-date + currently-live capacity for the rest of the month
     a1_ocpu_h = a1_gb_h = 0.0
@@ -272,21 +297,27 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
             a1_ocpu_h += q
     next_month = (month_start + dt.timedelta(days=32)).replace(day=1)
     hours_left = (next_month - today).total_seconds() / 3600
-    target = next((s for s in rep.sections if s.title == "COMPUTE"), sec)
+    hours = Section("A1 hours", ["A1 hours", "Used", "Proj.", "Limit"])
     for label, used, key, live in (
-        ("A1 OCPU-h used", a1_ocpu_h, "a1_ocpu_hours", ctx.a1_live_ocpu),
-        ("A1 GB-h used", a1_gb_h, "a1_gb_hours", ctx.a1_live_mem),
+        ("OCPU-h", a1_ocpu_h, "a1_ocpu_hours", ctx.a1_live_ocpu),
+        ("GB-h", a1_gb_h, "a1_gb_hours", ctx.a1_live_mem),
     ):
-        target.rows.append(Row(label, used, LIMITS[key], "info", num(used), num(LIMITS[key])))
         proj = used + live * hours_left
-        add_limit_row(target, label.replace("used", "proj."), proj, LIMITS[key])
+        hours.rows.append(
+            Row(
+                [label, num(used), num(proj), num(LIMITS[key])],
+                level(proj, LIMITS[key]),
+                {"used": used, "projected": proj, "limit": LIMITS[key]},
+            )
+        )
         if proj > LIMITS[key]:
-            rep.alerts.append(f"{label.replace(' used', '')} projected to exceed the monthly free quota.")
+            rep.alerts.append(f"A1 {label} projected to exceed the monthly free quota.")
+    # place right after Compute when present
+    idx = next((n + 1 for n, s in enumerate(rep.sections) if s.title == "Compute"), len(rep.sections))
+    rep.sections.insert(idx, hours)
 
 
 def collect_storage(ctx: Ctx, rep: Report) -> None:
-    sec = Section("STORAGE")
-    rep.sections.append(sec)
     bs = ctx.client(oci.core.BlockstorageClient)
     alive = lambda x: x.lifecycle_state not in ("TERMINATED", "TERMINATING")  # noqa: E731
     vol_gb = backups = 0
@@ -300,10 +331,6 @@ def collect_storage(ctx: Ctx, rep: Report) -> None:
         vol_gb += sum(v.size_in_gbs or 0 for v in ctx.list_all(bs.list_volumes, compartment_id=comp) if alive(v))
         backups += sum(1 for b in ctx.list_all(bs.list_volume_backups, comp) if alive(b))
         backups += sum(1 for b in ctx.list_all(bs.list_boot_volume_backups, comp) if alive(b))
-    add_limit_row(sec, "Block+boot GB", vol_gb, LIMITS["block_gb"])
-    add_limit_row(sec, "Volume backups", backups, LIMITS["backups"])
-    if vol_gb > LIMITS["block_gb"] or backups > LIMITS["backups"]:
-        rep.alerts.append("Block storage or backups exceed the Always Free limit.")
 
     osc = ctx.client(oci.object_storage.ObjectStorageClient)
     ns = osc.get_namespace().data
@@ -311,7 +338,20 @@ def collect_storage(ctx: Ctx, rep: Report) -> None:
     for comp in ctx.compartments:
         for b in ctx.list_all(osc.list_buckets, ns, comp):
             obj += osc.get_bucket(ns, b.name, fields=["approximateSize"]).data.approximate_size or 0
-    add_limit_row(sec, "Object Stor. GB", obj / GB, LIMITS["object_gb"], nd=2)
+
+    rep.sections.append(
+        Section(
+            "Storage",
+            ["Storage", "Used", "Limit"],
+            [
+                limit_row("Block+boot (GB)", vol_gb, LIMITS["block_gb"]),
+                limit_row("Volume backups", backups, LIMITS["backups"]),
+                limit_row("Object (GB)", obj / GB, LIMITS["object_gb"], nd=2),
+            ],
+        )
+    )
+    if vol_gb > LIMITS["block_gb"] or backups > LIMITS["backups"]:
+        rep.alerts.append("Block storage or backups exceed the Always Free limit.")
     if obj / GB > LIMITS["object_gb"]:
         rep.alerts.append("Object Storage exceeds 20 GB.")
 
@@ -327,8 +367,6 @@ def _metrics(mon, ctx: Ctx, namespace: str, query: str, start, end):
 
 
 def collect_network(ctx: Ctx, rep: Report) -> None:
-    sec = Section("NETWORK")
-    rep.sections.append(sec)
     mon = ctx.client(oci.monitoring.MonitoringClient)
     now = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
     # VNIC egress, month to date (conservative: also counts intra-VCN traffic)
@@ -337,14 +375,18 @@ def collect_network(ctx: Ctx, rep: Report) -> None:
         for s in _metrics(mon, ctx, "oci_vcn", "VnicToNetworkBytes[1h].sum()", now.replace(day=1, hour=0), now)
         for p in s.aggregated_datapoints
     )
-    add_limit_row(sec, "Egress GB (MTD)", egress / GB, LIMITS["egress_gb"], nd=2)
+    rep.sections.append(
+        Section(
+            "Network",
+            ["Network", "Used", "Limit"],
+            [limit_row("Egress MTD (GB)", egress / GB, LIMITS["egress_gb"], nd=2)],
+        )
+    )
     if egress / GB > LIMITS["egress_gb"]:
         rep.alerts.append("Outbound data transfer exceeds 10 TB this month.")
 
 
 def collect_idle(ctx: Ctx, rep: Report, running: list) -> None:
-    sec = Section("IDLE 7d p95", "CPU%", "RAM%")
-    rep.sections.append(sec)
     mon = ctx.client(oci.monitoring.MonitoringClient)
     now = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
     stats: dict[str, dict[str, float]] = {}
@@ -353,6 +395,7 @@ def collect_idle(ctx: Ctx, rep: Report, running: list) -> None:
             stats.setdefault(s.dimensions.get("resourceId"), {})[metric] = p95(
                 p.value for p in s.aggregated_datapoints
             )
+    sec = Section("Idle", ["Idle 7d p95", "CPU %", "RAM %"])
     fmt = lambda v: "n/a" if math.isnan(v) else num(v, 1)  # noqa: E731
     for i in running:
         st = stats.get(i.id, {})
@@ -369,14 +412,15 @@ def collect_idle(ctx: Ctx, rep: Report, running: list) -> None:
             )
         else:
             status = "ok"
-        sec.rows.append(Row(i.display_name, cpu, mem, status, fmt(cpu), fmt(mem)))
+        sec.rows.append(
+            Row([i.display_name, fmt(cpu), fmt(mem)], status, {"cpu_p95": cpu, "mem_p95": mem, "id": i.id})
+        )
     if not running:
-        sec.rows.append(Row("no running VM", None, None, "info"))
+        sec.rows.append(Row(["no running VM", "", ""], "info"))
+    rep.sections.append(sec)
 
 
 def collect_other(ctx: Ctx, rep: Report) -> None:
-    sec = Section("OTHER")
-    rep.sections.append(sec)
     lb_c = ctx.client(oci.load_balancer.LoadBalancerClient)
     nlb_c = ctx.client(oci.network_load_balancer.NetworkLoadBalancerClient)
     db_c = ctx.client(oci.database.DatabaseClient)
@@ -397,12 +441,19 @@ def collect_other(ctx: Ctx, rep: Report) -> None:
                 adb_free += 1
             else:
                 adb_paid += 1
-    add_limit_row(sec, "Load balancers", lbs, LIMITS["lb"])
-    add_limit_row(sec, "Network LBs", nlbs, LIMITS["nlb"])
-    add_limit_row(sec, "Autonomous DBs", adb_free, LIMITS["adb"])
+    sec = Section(
+        "Other",
+        ["Other", "Used", "Limit"],
+        [
+            limit_row("Load balancers", lbs, LIMITS["lb"]),
+            limit_row("Network LBs", nlbs, LIMITS["nlb"]),
+            limit_row("Autonomous DBs", adb_free, LIMITS["adb"]),
+        ],
+    )
     if adb_paid:
-        sec.rows.append(Row("Paid ADBs", adb_paid, 0, "over", str(adb_paid), "0"))
+        sec.rows.append(limit_row("Paid ADBs", adb_paid, 0))
         rep.alerts.append(f"{adb_paid} Autonomous Database(s) are not Always Free.")
+    rep.sections.append(sec)
     if lbs > LIMITS["lb"] or nlbs > LIMITS["nlb"] or adb_free > LIMITS["adb"]:
         rep.alerts.append("Load balancer / NLB / Autonomous DB count exceeds the free limit.")
 
@@ -438,46 +489,85 @@ def build_report() -> Report:
 
 
 # ---------------------------------------------------------------- renderers
-def _fit(s: str, w: int, left: bool = True) -> str:
-    s = s if len(s) <= w else s[: w - 1] + "…"
-    return s.ljust(w) if left else s.rjust(w)
+def _icons() -> dict:
+    return STATUS_ASCII if os.environ.get("REPORT_ASCII") == "1" else STATUS_EMOJI
 
 
-def render_table(rep: Report, fenced: bool = True) -> str:
-    icons = STATUS_ASCII if os.environ.get("REPORT_ASCII") == "1" else STATUS_EMOJI
+def _header(rep: Report, bold: bool) -> list[str]:
+    icons = _icons()
+    b = (lambda s: f"**{s}**") if bold else (lambda s: s)
     when = dt.datetime.fromisoformat(rep.generated_at)
-    out = [f"**OCI Always Free · {when:%a %d %b %Y}**", f"{rep.region} · {when:%H:%M} {rep.timezone}", ""]
+    out = [b(f"OCI Always Free · {when:%a %d %b %Y}"), f"{rep.region} · {when:%H:%M} {rep.timezone}", ""]
     if rep.alerts:
-        out.append(f"{icons['over']} **{len(rep.alerts)} alert(s)**")
+        out.append(f"{icons['over']} {b(f'{len(rep.alerts)} alert(s)')}")
         out += [f"• {a}" for a in rep.alerts]
     elif rep.errors:
         out.append(f"{icons['error']} Some checks failed — status incomplete")
     else:
-        out.append(f"{icons['ok']} **All within Always Free — cost 0**")
-    out.append("")
+        out.append(f"{icons['ok']} {b('All within Always Free — cost 0')}")
+    return out
 
+
+def _footer(rep: Report) -> list[str]:
+    icons = _icons()
+    out = []
+    if rep.errors:
+        out += [""] + [f"{icons['error']} {e}" for e in rep.errors]
+    legend = "  ".join(
+        f"{icons[k]} {t}" for k, t in (("ok", "<70%"), ("warn", "70-90%"), ("high", "≥90%"), ("over", "over"))
+    )
+    return out + ["", legend]
+
+
+def render_markdown(rep: Report) -> str:
+    """GFM pipe tables — Hermes converts them per platform (Telegram: native rich table)."""
+    icons = _icons()
+    out = _header(rep, bold=True)
+    for sec in rep.sections:
+        cols = sec.columns + ["Status"]
+        out += ["", "| " + " | ".join(cols) + " |", "|" + "|".join([":---"] + ["---:"] * (len(cols) - 2) + [":---:"]) + "|"]
+        for r in sec.rows:
+            cells = [c.replace("|", "/") for c in r.cells] + [icons[r.status]]
+            out.append("| " + " | ".join(cells) + " |")
+    return "\n".join(out + _footer(rep))
+
+
+def render_mono(rep: Report, fenced: bool) -> str:
+    """Monospace table, label column trimmed so each row fits MONO_MAX_WIDTH characters."""
+    icons = _icons()
     tbl: list[str] = []
     for sec in rep.sections:
+        ncol = len(sec.columns)
+        vw = [max(len(sec.columns[c]), *(len(r.cells[c]) for r in sec.rows)) for c in range(1, ncol)]
+        lw = max(len(sec.columns[0]), *(len(r.cells[0]) for r in sec.rows))
+        lw = max(6, min(lw, MONO_MAX_WIDTH - sum(vw) - len(vw)))
+
+        def fit(s: str, w: int, left: bool) -> str:
+            s = s if len(s) <= w else s[: w - 1] + "…"
+            return s.ljust(w) if left else s.rjust(w)
+
         if tbl:
             tbl.append("")
-        tbl.append(
-            f"{_fit(sec.title, W_LABEL)} {_fit(sec.col_used, W_USED, False)} {_fit(sec.col_limit, W_LIMIT, False)}"
-        )
+        tbl.append(" ".join([fit(sec.columns[0].upper(), lw, True)] + [fit(h, w, False) for h, w in zip(sec.columns[1:], vw)]))
         for r in sec.rows:
-            tbl.append(
-                f"{_fit(r.label, W_LABEL)} {_fit(r.used_s, W_USED, False)} "
-                f"{_fit(r.limit_s, W_LIMIT, False)} {icons[r.status]}".rstrip()
-            )
-    out += (["```"] + tbl + ["```"]) if fenced else tbl
-    if rep.errors:
-        out.append("")
-        out += [f"{icons['error']} {e}" for e in rep.errors]
-    out += ["", "  ".join(f"{icons[k]} {t}" for k, t in (("ok", "<70%"), ("warn", "70-90%"), ("high", "≥90%"), ("over", "over")))]
-    return "\n".join(out)
+            line = " ".join([fit(r.cells[0], lw, True)] + [fit(v, w, False) for v, w in zip(r.cells[1:], vw)])
+            tbl.append(f"{line} {icons[r.status]}".rstrip())
+    body = (["```"] + tbl + ["```"]) if fenced else tbl
+    return "\n".join(_header(rep, bold=fenced) + [""] + body + _footer(rep))
 
 
 def render_json(rep: Report) -> str:
     return json.dumps(asdict(rep), indent=2, default=str)
+
+
+def render(rep: Report, fmt: str) -> str:
+    if fmt == "json":
+        return render_json(rep)
+    if fmt in ("mono", "table"):  # "table" = v1.0 name
+        return render_mono(rep, fenced=True)
+    if fmt == "plain":
+        return render_mono(rep, fenced=False)
+    return render_markdown(rep)
 
 
 # ---------------------------------------------------------------- preflight
@@ -495,6 +585,7 @@ def preflight() -> int:
     auth = os.environ.get("OCI_AUTH", "instance_principal")
     instance_id = _imds("instance/id")
     print(f"auth mode    : {auth}")
+    print(f"format       : {os.environ.get('REPORT_FORMAT', 'markdown')}")
     print(f"OCI instance : {instance_id or 'not detected (not running on OCI?)'}")
     try:
         ctx = Ctx()
@@ -565,7 +656,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="OCI Always Free usage report (no LLM).")
     ap.add_argument("--check", action="store_true", help="preflight: auth + permission probe")
     ap.add_argument(
-        "--format", choices=["table", "plain", "json"], default=os.environ.get("REPORT_FORMAT", "table")
+        "--format",
+        choices=["markdown", "mono", "plain", "json", "table"],
+        default=os.environ.get("REPORT_FORMAT", "markdown"),
     )
     ap.add_argument("--version", action="version", version=__version__)
     args = ap.parse_args()
@@ -578,7 +671,7 @@ def main() -> int:
         return 1
     if os.environ.get("REPORT_QUIET") == "1" and not rep.alerts and not rep.errors:
         return 0  # empty stdout → Hermes delivers nothing
-    print(render_json(rep) if args.format == "json" else render_table(rep, fenced=args.format == "table"))
+    print(render(rep, args.format))
     return 0
 
 
