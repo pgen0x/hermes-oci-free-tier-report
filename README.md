@@ -68,7 +68,7 @@ GB-h     3,824 12,464 18,000 ✅
 
 In the chat where you want the daily report, tell your Hermes bot:
 
-> Install https://github.com/pgen0x/hermes-oracle-cloud-free-tier-monitor for your own profile as a daily no-agent
+> Install https://github.com/pgen0x/hermes-oci-free-tier-report for your own profile as a daily no-agent
 > cron job that posts to this chat at 07:00. Follow skills/oci-free-tier-report/SKILL.md step by step and tell me
 > the installer's exit code.
 
@@ -79,7 +79,7 @@ permissions are missing — gives you the two console steps with your instance O
 To make the bot permanently aware of the skill (updates, "what does this line mean?"):
 
 ```bash
-hermes skills install pgen0x/hermes-oracle-cloud-free-tier-monitor/skills/oci-free-tier-report
+hermes skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
 ```
 
 ## Manual install
@@ -87,8 +87,8 @@ hermes skills install pgen0x/hermes-oracle-cloud-free-tier-monitor/skills/oci-fr
 On the OCI VM where Hermes runs:
 
 ```bash
-git clone https://github.com/pgen0x/hermes-oracle-cloud-free-tier-monitor
-cd hermes-oracle-cloud-free-tier-monitor
+git clone https://github.com/pgen0x/hermes-oci-free-tier-report
+cd hermes-oci-free-tier-report
 ./install.sh --deliver telegram          # default profile → Telegram home channel, 07:00 local time
 ```
 

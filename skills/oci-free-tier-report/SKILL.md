@@ -13,7 +13,7 @@ metadata:
 
 # Oracle Cloud Free Tier monitor (OCI Always Free usage report)
 
-Repo: https://github.com/pgen0x/hermes-oracle-cloud-free-tier-monitor
+Repo: https://github.com/pgen0x/hermes-oci-free-tier-report
 A Hermes `--no-agent` cron job: pure OCI API calls, zero tokens per run, stdout delivered verbatim to a chat.
 It checks cost, A1 OCPU/RAM hours, block/object storage, egress, idle-reclaim risk, load balancers and
 Autonomous DBs against Oracle's Always Free limits.
@@ -37,9 +37,9 @@ not an OCI instance (the preflight prints `OCI instance : not detected`), stop a
 3. **Pick the time.** Default 07:00 in the user's timezone; confirm in one line, don't interrogate.
 4. Clone and run the installer from a terminal:
    ```bash
-   git clone --depth 1 https://github.com/pgen0x/hermes-oracle-cloud-free-tier-monitor ~/.local/src/hermes-oracle-cloud-free-tier-monitor \
-     || git -C ~/.local/src/hermes-oracle-cloud-free-tier-monitor pull --ff-only
-   ~/.local/src/hermes-oracle-cloud-free-tier-monitor/install.sh \
+   git clone --depth 1 https://github.com/pgen0x/hermes-oci-free-tier-report ~/.local/src/hermes-oci-free-tier-report \
+     || git -C ~/.local/src/hermes-oci-free-tier-report pull --ff-only
+   ~/.local/src/hermes-oci-free-tier-report/install.sh \
      --profile <profile> --deliver <target> --schedule "0 7 * * *" --timezone <IANA tz>
    ```
 5. Read the installer's exit code:
@@ -72,7 +72,7 @@ there is no header. Otherwise, if the user dislikes it, re-run the installer wit
 cron jobs in that profile lose the header too — say so).
 
 ## Maintain
-- Update: `git -C ~/.local/src/hermes-oracle-cloud-free-tier-monitor pull` then re-run `install.sh` with the same flags (it updates the existing job).
+- Update: `git -C ~/.local/src/hermes-oci-free-tier-report pull` then re-run `install.sh` with the same flags (it updates the existing job).
 - Change time/target: `hermes [-p <profile>] cron edit <id> --schedule ... --deliver ...`
 - Remove: `install.sh --uninstall --profile <profile>`
 

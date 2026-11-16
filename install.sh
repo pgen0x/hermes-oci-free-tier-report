@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installer for hermes-oracle-cloud-free-tier-monitor (OCI Always Free usage report for Hermes cron).
+# Installer for hermes-oci-free-tier-report (OCI Always Free usage report for Hermes cron).
 # Copies the report script into a Hermes profile, builds a private venv with the OCI SDK,
 # runs a permission preflight, and (optionally) creates a no-agent daily cron job.
 #
