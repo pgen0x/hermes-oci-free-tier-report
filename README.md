@@ -1,4 +1,19 @@
+<div align="center">
+
+<img src="assets/banner.svg" alt="OCI Free Tier Usage Report — daily Oracle Cloud Always Free usage check for Hermes Agent" width="100%">
+
+<br>
+
+[![Release](https://img.shields.io/github/v/release/pgen0x/hermes-oci-free-tier-report?style=flat-square&color=F43F5E)](https://github.com/pgen0x/hermes-oci-free-tier-report/releases)
+[![License: MIT](https://img.shields.io/github/license/pgen0x/hermes-oci-free-tier-report?style=flat-square&color=3B82F6)](LICENSE)
+[![Hermes skill](https://img.shields.io/badge/Hermes-skill-8B5CF6?style=flat-square)](skills/oci-free-tier-report/SKILL.md)
+[![OCI Always Free](https://img.shields.io/badge/OCI-Always%20Free-F97316?style=flat-square)](https://www.oracle.com/cloud/free/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](skills/oci-free-tier-report/requirements.txt)
+[![LLM tokens: 0](https://img.shields.io/badge/LLM%20tokens-0-22C55E?style=flat-square)](#how-it-works)
+
 **English** · [Bahasa Indonesia](README.id.md)
+
+</div>
 
 # Oracle Cloud Free Tier Monitor for Hermes — OCI Always Free usage alerts on Telegram, Discord & WhatsApp
 
@@ -25,7 +40,32 @@ the free limit.
 > to monitor (Ampere A1 Flex or VM.Standard.E2.1.Micro, Ubuntu / Oracle Linux). The report signs in as that VM via
 > instance principal, so it does not work on a laptop, another cloud or a non-OCI VPS.
 
+## Quick start
+
+On the OCI VM where Hermes runs:
+
+```bash
+hermes skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
+```
+
+Then tell your Hermes bot: **"set up the OCI free tier report in this chat"**. It runs the bundled installer,
+creates a daily 07:00 cron job and sends a first report. Update later with `hermes skills update oci-free-tier-report`.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["OCI APIs<br/>Usage · Compute · Storage<br/>Monitoring · Network"] -->|instance principal,<br/>read-only| B["oci_free_tier_report.py<br/>on your OCI VM"]
+    B -->|stdout| C["Hermes cron<br/>--no-agent"]
+    C --> D["Telegram · Discord · WhatsApp<br/>Slack · Signal · Matrix"]
+```
+
+Every morning Hermes runs the script as a `--no-agent` cron job. The script signs in as the VM itself, reads your
+tenancy's usage through the OCI SDK, compares it with the Always Free limits and prints a table. Hermes delivers that
+text unchanged — no LLM call, no API key on disk, nothing to pay.
+
 ## Contents
+- [Quick start](#quick-start) · [How it works](#how-it-works)
 - [Example report](#example-report)
 - [Install with one message to your Hermes bot](#install-with-one-message-to-your-hermes-bot)
 - [Manual install](#manual-install) · [Update](#update)
