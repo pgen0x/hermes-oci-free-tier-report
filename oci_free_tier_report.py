@@ -389,11 +389,15 @@ def collect_storage(ctx: Ctx, rep: Report) -> None:
         sec.note = f"Volumes total {vol_gb} GB, {-left} GB over the free 200 GB — delete or shrink a volume."
     elif left == 0:
         sec.note = (
-            "Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume. "
+            "Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume."
         )
     else:
-        sec.note = f"{left} GB of the free 200 GB block storage still available. "
-    sec.note += f"Backups {backups}/5, Object Storage {num(obj / GB, 2)}/20 GB."
+        sec.note = f"{left} GB of the free 200 GB block storage still available."
+    if backups > LIMITS["backups"]:
+        sec.note += f"{backups} volume backups — only 5 are free, delete the oldest. "
+    if obj / GB > LIMITS["object_gb"]:
+        sec.note += f"Object Storage holds {num(obj / GB, 2)} GB — only 20 GB is free. "
+    sec.note = sec.note.strip()
     if vol_gb > LIMITS["block_gb"] or backups > LIMITS["backups"]:
         rep.alerts.append("Block storage or backups exceed the Always Free limit.")
     if obj / GB > LIMITS["object_gb"]:
@@ -577,9 +581,27 @@ def _header(rep: Report, bold: bool) -> list[str]:
     return out
 
 
-def _footer(rep: Report) -> list[str]:
+NOTEWORTHY = {"warn", "high", "over", "info"}  # sections with any of these get their note in the footer
+
+
+def _notes(rep: Report, bold: bool) -> list[str]:
+    """Explanations only for sections that need attention; all-green sections stay silent."""
     icons = _icons()
     out = []
+    order = ["info", "warn", "high", "over"]
+    for sec in rep.sections:
+        flagged = [r.status for r in sec.rows if r.status in NOTEWORTHY]
+        if not flagged or not sec.note:
+            continue
+        worst = max(flagged, key=order.index)
+        title = f"**{sec.title}**" if bold else sec.title
+        out.append(f"{icons[worst]} {title}: {sec.note}")
+    return ["", "**Notes**" if bold else "Notes"] + out if out else []
+
+
+def _footer(rep: Report, bold: bool = True) -> list[str]:
+    icons = _icons()
+    out = _notes(rep, bold)
     if rep.errors:
         out += [""] + [f"{icons['error']} {e}" for e in rep.errors]
     legend = "  ".join(
@@ -598,17 +620,16 @@ def render_markdown(rep: Report) -> str:
         for r in sec.rows:
             cells = [c.replace("|", "/") for c in r.cells] + [icons[r.status]]
             out.append("| " + " | ".join(cells) + " |")
-        if sec.note:
-            out += ["", f"_{sec.note}_"]
     return "\n".join(out + _footer(rep))
 
 
 def render_mono(rep: Report, fenced: bool) -> str:
     """Monospace table, label column trimmed so each row fits MONO_MAX_WIDTH characters."""
     icons = _icons()
-    body: list[str] = []
+    tbl: list[str] = []
     for sec in rep.sections:
-        tbl: list[str] = []
+        if tbl:
+            tbl.append("")
         ncol = len(sec.columns)
         vw = [max(len(sec.columns[c]), *(len(r.cells[c]) for r in sec.rows)) for c in range(1, ncol)]
         lw = max(len(sec.columns[0]), *(len(r.cells[0]) for r in sec.rows))
@@ -622,10 +643,8 @@ def render_mono(rep: Report, fenced: bool) -> str:
         for r in sec.rows:
             line = " ".join([fit(r.cells[0], lw, True)] + [fit(v, w, False) for v, w in zip(r.cells[1:], vw)])
             tbl.append(f"{line} {icons[r.status]}".rstrip())
-        body += [""] + ((["```"] + tbl + ["```"]) if fenced else tbl)
-        if sec.note:
-            body.append(sec.note)
-    return "\n".join(_header(rep, bold=fenced) + body + _footer(rep))
+    body = [""] + ((["```"] + tbl + ["```"]) if fenced else tbl)
+    return "\n".join(_header(rep, bold=fenced) + body + _footer(rep, bold=fenced))
 
 
 def render_json(rep: Report) -> str:
