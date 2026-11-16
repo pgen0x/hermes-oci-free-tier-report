@@ -1,3 +1,5 @@
+**English** · [Bahasa Indonesia](README.id.md)
+
 # Oracle Cloud Free Tier Monitor for Hermes — OCI Always Free usage alerts on Telegram, Discord & WhatsApp
 
 **Stay inside the Oracle Cloud Always Free tier and never get a surprise bill.**
