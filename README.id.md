@@ -1,4 +1,19 @@
+<div align="center">
+
+<img src="assets/banner.svg" alt="OCI Free Tier Usage Report — daily Oracle Cloud Always Free usage check for Hermes Agent" width="100%">
+
+<br>
+
+[![Release](https://img.shields.io/github/v/release/pgen0x/hermes-oci-free-tier-report?style=flat-square&color=F43F5E)](https://github.com/pgen0x/hermes-oci-free-tier-report/releases)
+[![License: MIT](https://img.shields.io/github/license/pgen0x/hermes-oci-free-tier-report?style=flat-square&color=3B82F6)](LICENSE)
+[![Hermes skill](https://img.shields.io/badge/Hermes-skill-8B5CF6?style=flat-square)](skills/oci-free-tier-report/SKILL.md)
+[![OCI Always Free](https://img.shields.io/badge/OCI-Always%20Free-F97316?style=flat-square)](https://www.oracle.com/cloud/free/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](skills/oci-free-tier-report/requirements.txt)
+[![LLM tokens: 0](https://img.shields.io/badge/LLM%20tokens-0-22C55E?style=flat-square)](#how-it-works)
+
 [English](README.md) · **Bahasa Indonesia**
+
+</div>
 
 # Monitor Oracle Cloud Free Tier untuk Hermes — peringatan pemakaian OCI Always Free di Telegram, Discord & WhatsApp
 
@@ -26,7 +41,33 @@ melewati batas gratis.
 > (Ampere A1 Flex atau VM.Standard.E2.1.Micro, Ubuntu / Oracle Linux). Laporan login sebagai VM tersebut lewat
 > instance principal, jadi tidak bisa dijalankan di laptop, cloud lain, atau VPS non-OCI.
 
+## Mulai cepat
+
+Di VM OCI tempat Hermes berjalan:
+
+```bash
+hermes skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
+```
+
+Lalu bilang ke bot Hermes kamu: **"pasang OCI free tier report di chat ini, bahasa Indonesia"**. Bot menjalankan
+installer bawaan skill, membuat cron job harian jam 07:00, dan mengirim laporan pertama. Update nanti dengan
+`hermes skills update oci-free-tier-report`.
+
+## Cara kerja
+
+```mermaid
+flowchart LR
+    A["OCI APIs<br/>Usage · Compute · Storage<br/>Monitoring · Network"] -->|instance principal,<br/>read-only| B["oci_free_tier_report.py<br/>di VM OCI kamu"]
+    B -->|stdout| C["Hermes cron<br/>--no-agent"]
+    C --> D["Telegram · Discord · WhatsApp<br/>Slack · Signal · Matrix"]
+```
+
+Setiap pagi Hermes menjalankan script sebagai cron job `--no-agent`. Script login sebagai VM itu sendiri, membaca
+pemakaian tenancy lewat OCI SDK, membandingkannya dengan batas Always Free, lalu mencetak tabel. Hermes mengirim teks
+itu apa adanya — tanpa LLM, tanpa API key di disk, tanpa biaya.
+
 ## Daftar isi
+- [Mulai cepat](#mulai-cepat) · [Cara kerja](#cara-kerja)
 - [Contoh laporan](#contoh-laporan)
 - [Install dengan satu pesan ke bot Hermes](#install-dengan-satu-pesan-ke-bot-hermes)
 - [Install manual](#install-manual) · [Update](#update)
