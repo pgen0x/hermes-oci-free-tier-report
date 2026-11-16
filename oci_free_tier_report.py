@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """OCI Always Free daily usage report — pure OCI API calls, no LLM.
 
-Designed for Hermes cron `--no-agent` jobs: stdout is delivered verbatim to whatever
+Must run on the OCI compute instance it monitors (instance-principal auth via the Instance Metadata
+Service). Designed for Hermes cron `--no-agent` jobs: stdout is delivered verbatim to whatever
 platform the job targets (Telegram, Discord, Slack, WhatsApp, Signal, Matrix, email, ...).
 
 Usage:
@@ -22,7 +23,7 @@ next to this script — install.sh writes that file. Environment variables win.
   REPORT_TZ       IANA timezone for the header (default: system local time)
   REPORT_QUIET    1 = print nothing when everything is OK (alerts-only mode)
   REPORT_DEBUG    1 = tracebacks on stderr
-  OCI_AUTH        instance_principal (default) | config
+  OCI_AUTH        instance_principal (default) | config (unsupported fallback, untested)
   OCI_CONFIG_FILE path to OCI config when OCI_AUTH=config (default ~/.oci/config)
   OCI_PROFILE     profile in that config (default DEFAULT)
 

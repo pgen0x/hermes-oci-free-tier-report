@@ -1,6 +1,6 @@
 # Instructions for AI agents
 
-If a user asked you to install this repository into Hermes, follow
+This repo only works on an OCI compute instance. If a user asked you to install it into Hermes, follow
 [`skills/oci-free-tier-report/SKILL.md`](skills/oci-free-tier-report/SKILL.md) — it is the install runbook.
 
 Short version:
