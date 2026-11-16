@@ -18,7 +18,8 @@ the free limit.
   what it means and what not to do.
 - **Your language.** English and Bahasa Indonesia built in; your Hermes bot can add any other language once at
   install time — the daily report still uses no AI.
-- **One sentence to install.** Ask your Hermes bot to install it and it sets up the cron job in the current chat.
+- **One sentence to install, one command to update.** Ships as a Hermes skill: your bot installs it with
+  `hermes skills install` and sets up the cron job in the current chat; `hermes skills update` keeps it current.
 
 > **Requirement: runs only on an OCI compute instance.** Hermes must be installed on the Oracle Cloud VM you want
 > to monitor (Ampere A1 Flex or VM.Standard.E2.1.Micro, Ubuntu / Oracle Linux). The report signs in as that VM via
@@ -27,7 +28,7 @@ the free limit.
 ## Contents
 - [Example report](#example-report)
 - [Install with one message to your Hermes bot](#install-with-one-message-to-your-hermes-bot)
-- [Manual install](#manual-install)
+- [Manual install](#manual-install) · [Update](#update)
 - [One-time OCI permission setup](#one-time-oci-permission-setup)
 - [Oracle Always Free limits checked](#oracle-always-free-limits-checked)
 - [Languages](#languages)
@@ -73,56 +74,80 @@ GB-h     3,824 12,464 18,000 ✅
 
 In the chat where you want the daily report, tell your Hermes bot:
 
-> Install https://github.com/pgen0x/hermes-oci-free-tier-report for your own profile as a daily no-agent
-> cron job that posts to this chat at 07:00. Follow skills/oci-free-tier-report/SKILL.md step by step and tell me
-> the installer's exit code.
+> Install the Hermes skill pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report with
+> `hermes skills install`, then follow its SKILL.md to set up a daily no-agent cron job that posts to this chat
+> at 07:00, and tell me the installer's exit code.
 
-The bot follows [`skills/oci-free-tier-report/SKILL.md`](skills/oci-free-tier-report/SKILL.md): it clones the repo,
-runs the installer for its own profile, targets the current chat, sends a first report, and — if Oracle
-permissions are missing — gives you the two console steps with your instance OCID filled in.
-
-To make the bot permanently aware of the skill (updates, "what does this line mean?"):
+Or install the skill yourself and then just ask the bot to "set up the OCI free tier report":
 
 ```bash
-hermes skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
+hermes [-p <profile>] skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-report
 ```
+
+The skill folder contains everything — `SKILL.md`, `install.sh`, the report script and the locales — so nothing
+else is downloaded or cloned. The bot follows [`SKILL.md`](skills/oci-free-tier-report/SKILL.md): it runs the
+installer for its own profile, targets the current chat, sends a first report, and — if Oracle permissions are
+missing — gives you the two console steps with your instance OCID filled in.
 
 ## Manual install
 
-On the OCI VM where Hermes runs:
+On the OCI VM where Hermes runs, either from the installed skill
+(`~/.hermes/skills/oci-free-tier-report`, or `~/.hermes/profiles/<profile>/skills/oci-free-tier-report`):
+
+```bash
+bash ~/.hermes/skills/oci-free-tier-report/install.sh --deliver telegram   # default profile → Telegram home channel, 07:00
+```
+
+or from a git checkout (contributors, or no skills hub):
 
 ```bash
 git clone https://github.com/pgen0x/hermes-oci-free-tier-report
-cd hermes-oci-free-tier-report
-./install.sh --deliver telegram          # default profile → Telegram home channel, 07:00 local time
+bash hermes-oci-free-tier-report/skills/oci-free-tier-report/install.sh --deliver telegram
 ```
 
-More examples:
+More examples (run from the skill folder):
 
 ```bash
-./install.sh --profile work --deliver discord:123456789012345678
-./install.sh --deliver telegram:-1001234567890 --schedule "30 8 * * *" --timezone Asia/Jakarta
-./install.sh --deliver whatsapp:6281234567890@s.whatsapp.net   # → mono format
-./install.sh --deliver telegram --format mono                     # override the automatic format
-./install.sh --deliver telegram --lang id                         # report in Bahasa Indonesia
-./install.sh --deliver telegram --unwrap                          # drop Hermes' "Cronjob Response" header
-./install.sh --no-cron                                            # install + permission check only
-./install.sh --uninstall --profile work
+bash install.sh --profile work --deliver discord:123456789012345678
+bash install.sh --deliver telegram:-1001234567890 --schedule "30 8 * * *" --timezone Asia/Jakarta
+bash install.sh --deliver whatsapp:6281234567890@s.whatsapp.net   # → mono format
+bash install.sh --deliver telegram --format mono                     # override the automatic format
+bash install.sh --deliver telegram --lang id                         # report in Bahasa Indonesia
+bash install.sh --deliver telegram --unwrap                          # drop Hermes' "Cronjob Response" header
+bash install.sh --no-cron                                            # install + permission check only
+bash install.sh --uninstall --profile work
 ```
 
 What the installer does:
 
 1. builds a private venv with the OCI Python SDK at `~/.local/share/hermes-oci-free-tier-report/venv`;
-2. copies `oci_free_tier_report.py` into the profile's `scripts/` folder (Hermes only runs scripts from there);
+2. copies `oci_free_tier_report.py` and its locales into the profile's `scripts/` folder (Hermes only runs scripts
+   from there);
 3. runs a **preflight** that tests every OCI permission the report needs;
-4. writes `oci_free_tier_report.conf` next to the script (output format + timezone), and for Telegram enables
-   `platforms.telegram.extra.rich_messages` in the profile — native tables are opt-in in Hermes, so restart that
-   profile once afterwards: `hermes [-p <profile>] gateway restart`;
+4. writes `oci_free_tier_report.conf` next to the script (output format, timezone, language), and for Telegram
+   enables `platforms.telegram.extra.rich_messages` in the profile — native tables are opt-in in Hermes, so restart
+   that profile once afterwards: `hermes [-p <profile>] gateway restart`;
 5. creates the cron job, or updates it if it already exists:
    `hermes cron create "0 7 * * *" --script oci_free_tier_report.py --no-agent --interpreter <venv python> --deliver <target>`.
 
 Re-running it is safe. Inside a Hermes session it detects the session's profile on its own.
 Exit codes: `0` ready · `3` installed but OCI permissions are missing · `1` error.
+
+## Update
+
+```bash
+hermes [-p <profile>] skills check                          # is a new version out?
+hermes [-p <profile>] skills update oci-free-tier-report    # fetch it
+bash <skill folder>/install.sh --profile <profile> --deliver <same target>   # deploy the new script
+```
+
+Re-running the installer keeps the cron job, its schedule and your settings (language, format, timezone).
+Or just ask your bot: "update the OCI free tier report skill". From a git checkout: `git pull`, then re-run
+`install.sh` the same way.
+
+**Upgrading from 1.3.x or older** (installed from a clone in `~/.local/src/hermes-oci-free-tier-report`): install the
+skill as above, re-run its `install.sh` with the same `--deliver`, then delete the old clone. If your bot copied
+`SKILL.md` into its `skills/` folder by hand, delete that folder before `hermes skills install`.
 
 ## One-time OCI permission setup
 
@@ -176,20 +201,22 @@ the setup guide are all localized. Pick one with `install.sh --lang <code>` (or 
 [Bahasa Indonesia README](README.id.md).
 
 **Any other language:** ask your Hermes bot for it when installing ("…daily report in Japanese"). Following the
-skill, it generates `locales/<code>.json` once from the English template, validates it with `--check-locale`, and
-installs with `--lang <code>`. The daily run stays LLM-free. Manually:
+skill, it generates a locale file once from the English template, validates it with `--check-locale`, and switches
+the job with `--lang <code>`. The daily run stays LLM-free. Custom locales live in the profile's
+`scripts/oci_free_tier_report_locales/`, so skill updates never overwrite them. Manually:
 
 ```bash
+SCRIPTS=~/.hermes/scripts        # or ~/.hermes/profiles/<profile>/scripts
 PY=~/.local/share/hermes-oci-free-tier-report/venv/bin/python
-$PY oci_free_tier_report.py --dump-locale > locales/ja.json   # English template
+$PY $SCRIPTS/oci_free_tier_report.py --dump-locale > $SCRIPTS/oci_free_tier_report_locales/ja.json
 # translate the values; keep keys and {placeholders}
-$PY oci_free_tier_report.py --check-locale ja
-./install.sh --deliver telegram --lang ja
+$PY $SCRIPTS/oci_free_tier_report.py --check-locale ja
+bash <skill folder>/install.sh --deliver telegram --lang ja
 ```
 
 Missing or broken keys fall back to English, so a partial translation never breaks the report. OCI identifiers
 (shape names, OCPU, GB-h, Console menu paths, IAM policy statements) are intentionally left in English so they
-match what you see and paste in the Oracle Console. Pull requests adding `locales/<code>.json` are welcome.
+match what you see and paste in the Oracle Console. Pull requests adding `skills/oci-free-tier-report/locales/<code>.json` are welcome.
 
 ## FAQ
 
@@ -224,7 +251,7 @@ override it). `install.sh --format` and `--timezone` write it for you.
 
 | Setting | Effect |
 |---|---|
-| `REPORT_LANG=id` | report language (`en` default, `id`, or any `locales/<code>.json`) |
+| `REPORT_LANG=id` | report language (`en` default, `id`, or any custom locale) |
 | `REPORT_FORMAT=markdown` | GFM tables — native on Telegram, aligned on Slack/Signal/Matrix (default for those) |
 | `REPORT_FORMAT=mono` | monospace table in a code block — default for Discord and WhatsApp |
 | `REPORT_FORMAT=plain` | monospace table without code fences — SMS, email, IRC |
@@ -240,11 +267,11 @@ hermes cron list                       # find the job id ("OCI Always Free Usage
 hermes cron run <id>                   # send a report now
 hermes cron edit <id> --schedule "0 9 * * *" --deliver discord:123
 hermes cron pause <id>
-./install.sh --uninstall
+bash <skill folder>/install.sh --uninstall
+hermes skills uninstall oci-free-tier-report
 ```
 
-Prefix with `hermes -p <profile>` for a named profile. To update: `git pull`, then re-run `install.sh` with the
-same flags.
+Prefix with `hermes -p <profile>` for a named profile. To update, see [Update](#update).
 
 ## How authentication works
 
