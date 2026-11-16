@@ -18,6 +18,8 @@ CREATE_CRON=1
 UNINSTALL=0
 SKIP_CHECK=0
 FORMAT=""
+TELEGRAM_RICH=1
+NEED_RESTART=0
 
 usage() {
   sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
@@ -32,6 +34,7 @@ Options:
   --name NAME        cron job name (default: "OCI Always Free Usage Report")
   --format FMT       markdown | mono | plain | json (default: picked from --deliver platform —
                      markdown for Telegram/Slack/Signal/Matrix, mono for Discord/WhatsApp, plain for SMS/email/IRC)
+  --no-telegram-rich do not enable Telegram Rich Messages (native tables) in the profile config
   --no-cron          install only, do not create the cron job
   --skip-check       skip the OCI permission preflight
   --uninstall        remove the script, venv and cron job
@@ -46,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --timezone) TIMEZONE="$2"; shift 2 ;;
     --name) JOB_NAME="$2"; shift 2 ;;
     --format) FORMAT="$2"; shift 2 ;;
+    --no-telegram-rich) TELEGRAM_RICH=0; shift ;;
     --no-cron) CREATE_CRON=0; shift ;;
     --skip-check) SKIP_CHECK=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -147,6 +151,21 @@ set_conf REPORT_FORMAT "$FORMAT"
 set_conf REPORT_TZ "$TIMEZONE"
 say "Settings: $SCRIPTS_DIR/$CONF_NAME (REPORT_FORMAT=$FORMAT, REPORT_TZ=$TIMEZONE)"
 
+# Telegram only renders GFM tables natively via Bot API Rich Messages, which Hermes keeps opt-in
+# (platforms.telegram.extra.rich_messages). Without it, tables degrade to plain text.
+if [[ "${DELIVER%%:*}" == "telegram" && "$FORMAT" == "markdown" ]]; then
+  rich="$("${HCMD[@]}" config get platforms.telegram.extra.rich_messages 2>/dev/null | tail -1 || true)"
+  if [[ "$rich" == "true" || "$rich" == "True" ]]; then
+    say "Telegram Rich Messages already enabled (native tables)"
+  elif (( TELEGRAM_RICH )); then
+    "${HCMD[@]}" config set platforms.telegram.extra.rich_messages true >/dev/null
+    say "Enabled Telegram Rich Messages for profile '$PROFILE' (platforms.telegram.extra.rich_messages: true)"
+    NEED_RESTART=1
+  else
+    say "WARNING: Telegram Rich Messages are off — tables will arrive as plain text. Use --format mono instead."
+  fi
+fi
+
 # 3. preflight -------------------------------------------------------------------------
 CHECK_RC=0
 if (( ! SKIP_CHECK )); then
@@ -183,6 +202,9 @@ if (( CREATE_CRON )); then
 fi
 
 echo
+if (( NEED_RESTART )); then
+  say "Restart the Hermes gateway once so Telegram picks up native tables: hermes gateway restart"
+fi
 if (( CHECK_RC == 0 )); then
   say "Done. Test a real delivery now with: ${HCMD[*]} cron run <job id from '${HCMD[*]} cron list'>"
 else
