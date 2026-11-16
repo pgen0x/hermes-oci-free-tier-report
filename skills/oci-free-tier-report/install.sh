@@ -3,10 +3,13 @@
 # Copies the report script into a Hermes profile, builds a private venv with the OCI SDK,
 # runs a permission preflight, and (optionally) creates a no-agent daily cron job.
 #
-#   ./install.sh --deliver telegram                      # default profile, home channel, 07:00 local
-#   ./install.sh --profile work --deliver discord:123456789 --schedule "30 8 * * *"
-#   ./install.sh --no-cron                               # just install + preflight
-#   ./install.sh --uninstall [--profile NAME]
+# Ships inside the Hermes skill (hermes skills install …/skills/oci-free-tier-report). Hub installs drop the
+# executable bit, so run it with bash:
+#   bash install.sh --deliver telegram                      # default profile, home channel, 07:00 local
+#   bash install.sh --profile work --deliver discord:123456789 --schedule "30 8 * * *"
+#   bash install.sh --no-cron                               # just install + preflight
+#   bash install.sh --uninstall [--profile NAME]
+# Re-run after `hermes skills update oci-free-tier-report` to deploy the new script; settings are kept.
 set -euo pipefail
 
 PROFILE=""
@@ -34,7 +37,7 @@ Options:
   --schedule CRON    cron expression (default: "0 7 * * *")
   --timezone TZ      IANA timezone for the schedule (default: system timezone)
   --name NAME        cron job name (default: "OCI Always Free Usage Report")
-  --lang CODE        report language: en (default), id, or any locales/<CODE>.json in this repo
+  --lang CODE        report language: en (default), id, or any bundled or custom locale
   --format FMT       markdown | mono | plain | json (default: picked from --deliver platform —
                      markdown for Telegram/Slack/Signal/Matrix, mono for Discord/WhatsApp, plain for SMS/email/IRC)
   --no-telegram-rich do not enable Telegram Rich Messages (native tables) in the profile config
@@ -148,7 +151,7 @@ fi
 mkdir -p "$SCRIPTS_DIR"
 install -m 0755 "$SRC_DIR/$SCRIPT_NAME" "$SCRIPTS_DIR/$SCRIPT_NAME"
 # Locale files travel with the script (the script looks in <scripts>/oci_free_tier_report_locales/).
-rm -rf "${SCRIPTS_DIR:?}/$LOCALES_NAME"
+# Bundled locales are refreshed; custom ones the agent created there are kept (a skill update can't wipe them).
 mkdir -p "$SCRIPTS_DIR/$LOCALES_NAME"
 if compgen -G "$SRC_DIR/locales/*.json" >/dev/null; then
   install -m 0644 "$SRC_DIR"/locales/*.json "$SCRIPTS_DIR/$LOCALES_NAME/"
@@ -178,9 +181,9 @@ set_conf REPORT_FORMAT "$FORMAT"
 set_conf REPORT_TZ "$TIMEZONE"
 if [[ -n "$LANG_CODE" ]]; then
   if [[ "$LANG_CODE" != "en" ]]; then
-    [[ -f "$SCRIPTS_DIR/$LOCALES_NAME/$LANG_CODE.json" ]] || die "No locale '$LANG_CODE' (looked for $SRC_DIR/locales/$LANG_CODE.json). \
-Create it first: $PY $SRC_DIR/$SCRIPT_NAME --dump-locale > $SRC_DIR/locales/$LANG_CODE.json, translate the values, \
-then re-run with --lang $LANG_CODE."
+    [[ -f "$SCRIPTS_DIR/$LOCALES_NAME/$LANG_CODE.json" ]] || die "No locale '$LANG_CODE' (looked in $SCRIPTS_DIR/$LOCALES_NAME/). \
+Create it first: $PY $SCRIPTS_DIR/$SCRIPT_NAME --dump-locale > $SCRIPTS_DIR/$LOCALES_NAME/$LANG_CODE.json, \
+translate the values, then re-run with --lang $LANG_CODE."
     "$PY" "$SCRIPTS_DIR/$SCRIPT_NAME" --check-locale "$LANG_CODE" \
       || die "locales/$LANG_CODE.json is incomplete or has broken placeholders (see above)."
   fi
