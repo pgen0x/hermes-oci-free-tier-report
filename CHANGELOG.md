@@ -19,7 +19,7 @@ together: `__version__` in `oci_free_tier_report.py` and `version:` in `skills/o
 
 ### Changed
 - Documented as OCI-compute-instance only (instance principal); the API-key fallback is unsupported.
-- Repository renamed to `hermes-oracle-cloud-free-tier-monitor`; README rewritten.
+- README rewritten for search (title, intro, contents, FAQ).
 
 ## [1.1.0] — 2026-11-16
 
