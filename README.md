@@ -85,6 +85,10 @@ The installer:
 5. creates (or updates, if it already exists) the cron job:
    `hermes cron create "0 7 * * *" --script oci_free_tier_report.py --no-agent --interpreter <venv python> --deliver <target>`.
 
+Hermes prefixes every cron delivery with a `Cronjob Response: <name> (job_id: …)` header; with Telegram tables
+it renders as a large heading. Add `--unwrap` to set `cron.wrap_response: false` for the profile (affects all of
+that profile's cron jobs).
+
 Re-running it is safe. Tables arriving on Telegram as plain text means Rich Messages are off or the gateway
 was not restarted yet. Exit code `3` means "installed, but OCI permissions are not set up yet".
 

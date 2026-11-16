@@ -45,6 +45,11 @@ if it prints "Restart the Hermes gateway", run `hermes [-p <profile>] gateway re
 profile; without `-y` it refuses to interrupt live work). Override the format with `--format`. Other settings go in `oci_free_tier_report.conf`:
 `REPORT_ASCII=1` (no emoji), `REPORT_QUIET=1` (alerts only), `REPORT_TZ=<IANA tz>`.
 
+## Cron header
+Hermes wraps cron output in `Cronjob Response: <name> (job_id: …)` + a footer; on Telegram tables it shows as a
+big heading. If the user dislikes it, re-run the installer with `--unwrap` (sets `cron.wrap_response: false`
+for the whole profile — mention that other cron jobs in that profile lose the header too).
+
 ## Maintain
 - Update: `git -C ~/.local/src/hermes-oci-free-tier-report pull` then re-run `install.sh` with the same flags (it updates the existing job).
 - Change time/target: `hermes [-p <profile>] cron edit <id> --schedule ... --deliver ...`

@@ -19,6 +19,7 @@ UNINSTALL=0
 SKIP_CHECK=0
 FORMAT=""
 TELEGRAM_RICH=1
+UNWRAP=0
 NEED_RESTART=0
 
 usage() {
@@ -35,6 +36,8 @@ Options:
   --format FMT       markdown | mono | plain | json (default: picked from --deliver platform —
                      markdown for Telegram/Slack/Signal/Matrix, mono for Discord/WhatsApp, plain for SMS/email/IRC)
   --no-telegram-rich do not enable Telegram Rich Messages (native tables) in the profile config
+  --unwrap           set cron.wrap_response=false for the profile: drops Hermes' "Cronjob Response: …"
+                     header/footer (it renders as a big heading with Telegram tables). Profile-wide.
   --no-cron          install only, do not create the cron job
   --skip-check       skip the OCI permission preflight
   --uninstall        remove the script, venv and cron job
@@ -50,6 +53,7 @@ while [[ $# -gt 0 ]]; do
     --name) JOB_NAME="$2"; shift 2 ;;
     --format) FORMAT="$2"; shift 2 ;;
     --no-telegram-rich) TELEGRAM_RICH=0; shift ;;
+    --unwrap) UNWRAP=1; shift ;;
     --no-cron) CREATE_CRON=0; shift ;;
     --skip-check) SKIP_CHECK=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -199,6 +203,11 @@ if (( CREATE_CRON )); then
   status_out="$("${HCMD[@]}" cron status 2>/dev/null || true)"
   [[ "$status_out" == *"Gateway is running"* ]] \
     || say "WARNING: the Hermes gateway does not seem to be running — cron jobs only fire while it runs."
+fi
+
+if (( UNWRAP )); then
+  "${HCMD[@]}" config set cron.wrap_response false >/dev/null
+  say "Set cron.wrap_response=false for profile '$PROFILE' (all its cron jobs now deliver without the header)"
 fi
 
 echo
