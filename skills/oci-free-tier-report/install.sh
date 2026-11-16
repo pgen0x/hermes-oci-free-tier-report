@@ -137,7 +137,7 @@ if [[ ! -x "$PY" ]]; then
     uv venv -q "$VENV"
   else
     python3 -m venv "$VENV" 2>/dev/null \
-      || die "python3 -m venv failed. Install it (Ubuntu/Debian: sudo apt install python3-venv) or install uv."
+      || die "python3 -m venv failed. Install it (as root on Ubuntu/Debian: apt install python3-venv) or install uv."
   fi
 fi
 if command -v uv >/dev/null 2>&1; then

@@ -59,8 +59,12 @@ from pathlib import Path
 __version__ = "1.4.0"
 
 
+_CONF: dict[str, str] = {}       # oci_free_tier_report.conf
+_OVERRIDES: dict[str, str] = {}  # command-line flags
+
+
 def load_conf() -> None:
-    """Fill os.environ from <script>.conf (KEY=VALUE); real environment variables take precedence."""
+    """Read <script>.conf (KEY=VALUE) into _CONF. The process environment is never modified."""
     conf = Path(__file__).with_suffix(".conf")
     try:
         lines = conf.read_text().splitlines()
@@ -71,7 +75,15 @@ def load_conf() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, val = line.split("=", 1)
-        os.environ.setdefault(key.strip(), val.strip().strip("'\""))
+        _CONF[key.strip()] = val.strip().strip("'\"")
+
+
+def setting(key: str, default: str | None = None) -> str | None:
+    """Command-line flag > environment variable > conf file > default."""
+    if key in _OVERRIDES:
+        return _OVERRIDES[key]
+    val = os.environ.get(key)
+    return val if val is not None else _CONF.get(key, default)
 
 
 load_conf()
@@ -79,7 +91,7 @@ load_conf()
 try:
     import oci
 except ImportError:  # pragma: no cover
-    print("The `oci` Python SDK is missing. Run install.sh or: pip install oci", file=sys.stderr)
+    print("The `oci` Python SDK is missing. Run install.sh, or pip install -r requirements.txt", file=sys.stderr)
     sys.exit(2)
 
 GB = 1024**3
@@ -217,8 +229,9 @@ _LOCALE: dict[str, str] = dict(EN)
 def locale_dirs() -> list[Path]:
     here = Path(__file__).resolve().parent
     dirs = [here / "oci_free_tier_report_locales", here / "locales"]
-    if os.environ.get("REPORT_LOCALE_DIR"):
-        dirs.insert(0, Path(os.environ["REPORT_LOCALE_DIR"]).expanduser())
+    extra = setting("REPORT_LOCALE_DIR")
+    if extra:
+        dirs.insert(0, Path(extra).expanduser())
     return dirs
 
 
@@ -378,10 +391,10 @@ def limit_row(label: str, used: float, limit: float, nd: int = 0) -> Row:
 # ---------------------------------------------------------------- OCI context
 class Ctx:
     def __init__(self) -> None:
-        if os.environ.get("OCI_AUTH", "instance_principal") == "config":
+        if setting("OCI_AUTH", "instance_principal") == "config":
             self.cfg = oci.config.from_file(
-                os.path.expanduser(os.environ.get("OCI_CONFIG_FILE", "~/.oci/config")),
-                os.environ.get("OCI_PROFILE", "DEFAULT"),
+                os.path.expanduser(setting("OCI_CONFIG_FILE", "~/.oci/config")),
+                setting("OCI_PROFILE", "DEFAULT"),
             )
             self.kw: dict = {}
             self.tenancy = self.cfg["tenancy"]
@@ -734,7 +747,7 @@ def collect_other(ctx: Ctx, rep: Report) -> None:
 
 
 def build_report() -> Report:
-    tzname = os.environ.get("REPORT_TZ")
+    tzname = setting("REPORT_TZ")
     if tzname:
         from zoneinfo import ZoneInfo
 
@@ -744,7 +757,7 @@ def build_report() -> Report:
     rep = Report(
         generated_at=now.isoformat(timespec="minutes"),
         timezone=now.tzname() or "",
-        lang=set_language(os.environ.get("REPORT_LANG", "en")),
+        lang=set_language(setting("REPORT_LANG", "en")),
     )
     ctx = Ctx()  # auth failure propagates → non-zero exit → Hermes failure alert
     rep.region = ctx.region
@@ -765,7 +778,7 @@ def build_report() -> Report:
             rep.errors.append(f"{name}: {short_err(e)}")
             if isinstance(e, oci.exceptions.ServiceError) and e.status in (401, 403, 404):
                 auth_failures += 1
-            if os.environ.get("REPORT_DEBUG"):
+            if setting("REPORT_DEBUG"):
                 traceback.print_exc(file=sys.stderr)
     rep.setup_needed = auth_failures == len(steps)
     return rep
@@ -773,7 +786,7 @@ def build_report() -> Report:
 
 # ---------------------------------------------------------------- renderers
 def _icons() -> dict:
-    return STATUS_ASCII if os.environ.get("REPORT_ASCII") == "1" else STATUS_EMOJI
+    return STATUS_ASCII if setting("REPORT_ASCII") == "1" else STATUS_EMOJI
 
 
 def _header(rep: Report, bold: bool) -> list[str]:
@@ -863,7 +876,7 @@ def render_json(rep: Report) -> str:
 
 def setup_steps(markdown: bool) -> list[str]:
     """One-time IAM setup instructions, with this VM's instance OCID filled in when available."""
-    if os.environ.get("OCI_AUTH", "instance_principal") == "config":
+    if setting("OCI_AUTH", "instance_principal") == "config":
         stmts = [
             "Allow group <your group> to read usage-report in tenancy",
             "Allow group <your group> to read all-resources in tenancy",
@@ -932,12 +945,12 @@ def _imds(path: str) -> str | None:
 
 
 def preflight() -> int:
-    lang = set_language(os.environ.get("REPORT_LANG", "en"))
+    lang = set_language(setting("REPORT_LANG", "en"))
     print(f"oci-free-tier-report {__version__} — preflight\n")
-    auth = os.environ.get("OCI_AUTH", "instance_principal")
+    auth = setting("OCI_AUTH", "instance_principal")
     instance_id = _imds("instance/id")
     print(f"auth mode    : {auth}")
-    print(f"format       : {os.environ.get('REPORT_FORMAT', 'markdown')}")
+    print(f"format       : {setting('REPORT_FORMAT', 'markdown')}")
     print(f"language     : {lang}")
     print(f"OCI instance : {instance_id or 'not detected (not running on OCI?)'}")
     try:
@@ -987,7 +1000,7 @@ def main() -> int:
     ap.add_argument(
         "--format",
         choices=["markdown", "mono", "plain", "json", "table"],
-        default=os.environ.get("REPORT_FORMAT", "markdown"),
+        default=setting("REPORT_FORMAT", "markdown"),
     )
     ap.add_argument("--lang", help="report language (overrides REPORT_LANG)")
     ap.add_argument("--list-locales", action="store_true", help="list available languages")
@@ -996,7 +1009,7 @@ def main() -> int:
     ap.add_argument("--version", action="version", version=__version__)
     args = ap.parse_args()
     if args.lang:
-        os.environ["REPORT_LANG"] = args.lang
+        _OVERRIDES["REPORT_LANG"] = args.lang
     if args.list_locales:
         print("\n".join(available_locales()))
         return 0
@@ -1012,7 +1025,7 @@ def main() -> int:
     except Exception as e:
         print(f"OCI authentication failed: {short_err(e)}. Run with --check for setup steps.", file=sys.stderr)
         return 1
-    if os.environ.get("REPORT_QUIET") == "1" and not rep.alerts and not rep.errors:
+    if setting("REPORT_QUIET") == "1" and not rep.alerts and not rep.errors:
         return 0  # empty stdout → Hermes delivers nothing
     print(render(rep, args.format))
     return 0
