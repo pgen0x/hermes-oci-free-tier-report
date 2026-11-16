@@ -14,5 +14,8 @@ Short version:
 - The job is `--no-agent`: never convert it into an LLM prompt job.
 
 Development: the report is a single file, `oci_free_tier_report.py` (only dependency: `oci`).
+Every user-facing string lives in the `EN` dict and is rendered with `T(key, **vars)` — never hard-code text.
+When you add or change a key, update every `locales/*.json` and run `--check-locale <code>` for each.
+Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:` …).
 Output is built as sections of rows, then rendered as GFM tables (`markdown`, default) or a monospace table
 (`mono`/`plain`, kept within 34 characters + status icon so it fits a phone screen).

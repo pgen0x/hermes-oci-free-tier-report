@@ -3,6 +3,20 @@
 Versions follow [Semantic Versioning](https://semver.org/). The version lives in two places that must move
 together: `__version__` in `oci_free_tier_report.py` and `version:` in `skills/oci-free-tier-report/SKILL.md`.
 
+## [1.3.0] — 2026-11-16
+
+### Added
+- Localized reports ([#1](https://github.com/pgen0x/hermes-oci-free-tier-report/issues/1)): `REPORT_LANG` /
+  `--lang`, locale files in `locales/<code>.json` overlaying the built-in English strings, with fallback to English
+  for missing or broken keys. Numbers, dates, tables, notes, alerts and the IAM setup guide are localized.
+- Bahasa Indonesia (`id`) bundled.
+- `--check-locale`, `--dump-locale`, `--list-locales`.
+- `install.sh --lang` ships locale files next to the script and validates the language.
+- SKILL.md: the Hermes agent can create a new language once at install time; daily runs stay LLM-free.
+
+### Fixed
+- Storage note joined two sentences without a space when backups or Object Storage were over the limit.
+
 ## [1.2.1] — 2026-11-16
 
 ### Fixed
