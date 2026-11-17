@@ -5,6 +5,13 @@ minor versions may change paths or options. The version lives in two places that
 `version:` in `skills/oci-free-tier-report/SKILL.md` and `__version__` in
 `skills/oci-free-tier-report/oci_free_tier_report.py`.
 
+## [Unreleased]
+
+### Fixed
+- The ⚪ status (row needs a look, see note) is now explained in the legend when it appears.
+- Notes footer: one paragraph per note, so chat apps no longer run them together; long A1 explanations get their
+  own paragraph.
+
 ## [0.1.1] — 2026-11-17
 
 ### Fixed
