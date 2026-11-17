@@ -97,8 +97,12 @@
   "setup.name": "Name: {name}",
   "setup.rule": "Matching rule:",
   "setup.legacy": "(Tenancy lama tanpa identity domain: Identity → Dynamic Groups.)",
-  "setup.step2": "Identity & Security → Policies → pilih compartment root → Create policy",
-  "setup.statements": "Name: {name} — statements:",
+  "setup.description": "Description: {text}",
+  "setup.desc_text": "Akses baca-saja untuk laporan pemakaian OCI free tier",
+  "setup.step2": "Identity & Security → Policies → Create Policy (Compartment: compartment root / tenancy kamu)",
+  "setup.statements": "Name: {name}",
+  "setup.manual": "Nyalakan “Show manual editor” (bukan template Policy Builder), lalu paste:",
+  "setup.domain_note": "Dynamic group dibuat di domain selain Default? Tulis sebagai '<domain>'/'oci-free-tier-report' di kedua baris.",
   "setup.step3": "Tunggu 1–5 menit. Laporan terjadwal berikutnya akan terisi otomatis.",
   "setup.apikey": "Berikan policy statement berikut ke group milik user API key (compartment root):"
 }

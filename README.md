@@ -194,16 +194,25 @@ skill as above, re-run its `install.sh` with the same `--deliver`, then delete t
 
 ## One-time OCI permission setup
 
-The VM needs read-only access to your tenancy. The preflight prints these steps with your instance OCID filled in:
+The VM needs read-only access to your tenancy. You don't have to look up anything: the installer's preflight, the
+daily message (until permissions exist) and `--check` all print these steps with **your instance OCID already filled
+in** — your Hermes bot relays them to you. (To find it yourself: Console → Compute → Instances → your instance →
+OCID → Copy.)
 
 1. **Identity & Security → Domains → Default → Dynamic groups → Create dynamic group**
    - Name: `oci-free-tier-report`
-   - Matching rule: `instance.id = '<your instance OCID>'`
-2. **Identity & Security → Policies →** select the **root** compartment **→ Create policy**
+   - Description: `Read-only access for the OCI free tier usage report`
+   - Matching rule (Rule 1): `instance.id = '<your instance OCID>'`
+2. **Identity & Security → Policies → Create Policy**
+   - Name: `oci-free-tier-report-read`, Description: same as above
+   - Compartment: your **root** (tenancy) compartment
+   - Turn on **Show manual editor** (the Console opens the Policy Builder templates by default) and paste:
    ```
    Allow dynamic-group oci-free-tier-report to read usage-report in tenancy
    Allow dynamic-group oci-free-tier-report to read all-resources in tenancy
    ```
+   If you created the dynamic group in an identity domain other than `Default`, write it as
+   `'<domain>'/'oci-free-tier-report'` in both lines.
 3. Wait 1–5 minutes, then check:
    ```bash
    ~/.local/share/hermes-oci-free-tier-report/venv/bin/python ~/.hermes/scripts/oci_free_tier_report.py --check

@@ -56,7 +56,7 @@ import string
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 
 _CONF: dict[str, str] = {}       # oci_free_tier_report.conf
@@ -229,8 +229,12 @@ EN: dict[str, str] = {
     "setup.name": "Name: {name}",
     "setup.rule": "Matching rule:",
     "setup.legacy": "(Older tenancies without identity domains: Identity → Dynamic Groups.)",
-    "setup.step2": "Identity & Security → Policies → pick the root compartment → Create policy",
-    "setup.statements": "Name: {name} — statements:",
+    "setup.description": "Description: {text}",
+    "setup.desc_text": "Read-only access for the OCI free tier usage report",
+    "setup.step2": "Identity & Security → Policies → Create Policy (Compartment: your root / tenancy compartment)",
+    "setup.statements": "Name: {name}",
+    "setup.manual": "Turn on “Show manual editor” (instead of the Policy Builder templates) and paste:",
+    "setup.domain_note": "Dynamic group created in a domain other than Default? Write it as '<domain>'/'oci-free-tier-report' in both lines.",
     "setup.step3": "Wait 1–5 minutes. The next scheduled report fills in automatically.",
     "setup.apikey": "Grant the group of the API-key user these policy statements (root compartment):",
 }
@@ -954,13 +958,17 @@ def setup_steps(markdown: bool) -> list[str]:
         "",
         f"1. {b(T('setup.step1'))}",
         "   " + T("setup.name", name="oci-free-tier-report"),
+        "   " + T("setup.description", text=T("setup.desc_text")),
         "   " + T("setup.rule"),
         *block([rule]),
         "   " + T("setup.legacy"),
         "",
         f"2. {b(T('setup.step2'))}",
         "   " + T("setup.statements", name="oci-free-tier-report-read"),
+        "   " + T("setup.description", text=T("setup.desc_text")),
+        "   " + T("setup.manual"),
         *block(stmts),
+        "   " + T("setup.domain_note"),
         "",
         "3. " + T("setup.step3"),
     ]
