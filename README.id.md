@@ -197,16 +197,24 @@ Kalau bot kamu pernah menyalin `SKILL.md` ke folder `skills/` secara manual, hap
 
 ## Setup izin OCI (sekali saja)
 
-VM butuh akses hanya-baca ke tenancy. Preflight mencetak langkah ini lengkap dengan OCID instance kamu:
+VM butuh akses hanya-baca ke tenancy. Kamu tidak perlu mencari apa pun: preflight installer, pesan harian (selama
+izin belum ada), dan `--check` semuanya mencetak langkah ini dengan **OCID instance kamu sudah terisi** — bot Hermes
+akan meneruskannya ke kamu. (Kalau mau mencari sendiri: Console → Compute → Instances → instance kamu → OCID → Copy.)
 
 1. **Identity & Security → Domains → Default → Dynamic groups → Create dynamic group**
    - Name: `oci-free-tier-report`
-   - Matching rule: `instance.id = '<OCID instance kamu>'`
-2. **Identity & Security → Policies →** pilih compartment **root** **→ Create policy**
+   - Description: `Akses baca-saja untuk laporan pemakaian OCI free tier`
+   - Matching rule (Rule 1): `instance.id = '<OCID instance kamu>'`
+2. **Identity & Security → Policies → Create Policy**
+   - Name: `oci-free-tier-report-read`, Description: sama seperti di atas
+   - Compartment: compartment **root** (tenancy) kamu
+   - Nyalakan **Show manual editor** (Console membuka template Policy Builder secara default), lalu paste:
    ```
    Allow dynamic-group oci-free-tier-report to read usage-report in tenancy
    Allow dynamic-group oci-free-tier-report to read all-resources in tenancy
    ```
+   Kalau dynamic group dibuat di identity domain selain `Default`, tulis sebagai `'<domain>'/'oci-free-tier-report'`
+   di kedua baris.
 3. Tunggu 1–5 menit, lalu cek:
    ```bash
    ~/.local/share/hermes-oci-free-tier-report/venv/bin/python ~/.hermes/scripts/oci_free_tier_report.py --check

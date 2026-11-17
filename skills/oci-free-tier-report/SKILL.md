@@ -1,7 +1,7 @@
 ---
 name: oci-free-tier-report
 description: "Daily OCI Always Free usage report as a no-agent cron."
-version: 0.1.1
+version: 0.1.2
 author: pgen0x
 license: MIT
 platforms: [linux]
@@ -83,7 +83,7 @@ Then edit that `<code>.json`:
 - set `_language`, `num.thousands` / `num.decimal`, 7 `date.weekdays` and 12 `date.months` (comma-separated),
   and `date.format` for that language;
 - do **not** translate OCI identifiers: shape names, `OCPU`, `GB-h`, `A1`, Console menu paths in `setup.step1` /
-  `setup.step2`, and the `Name:` / `Matching rule:` / `statements:` labels the user must match in the Console;
+  `setup.step2`, and the `Name:` / `Description:` / `Matching rule:` labels and “Show manual editor” the user must match in the Console;
 - keep row labels short (≤ 15 characters) so the `mono` table fits a phone.
 
 Validate, then switch the job to it (same flags as the first install, the job is updated in place):

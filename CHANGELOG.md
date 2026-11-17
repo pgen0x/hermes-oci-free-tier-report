@@ -5,9 +5,14 @@ minor versions may change paths or options. The version lives in two places that
 `version:` in `skills/oci-free-tier-report/SKILL.md` and `__version__` in
 `skills/oci-free-tier-report/oci_free_tier_report.py`.
 
-## [Unreleased]
+## [0.1.2] — 2026-11-17
 
 ### Fixed
+- IAM setup guide matches the current OCI Console: policies open in the Policy Builder, so the guide now says to turn
+  on **Show manual editor** before pasting; adds the required **Description** for the dynamic group and the policy,
+  sets the compartment in the Create Policy form, and explains the `'<domain>'/'oci-free-tier-report'` form for
+  dynamic groups outside the Default domain. README explains that the instance OCID is filled in for you and where
+  to find it in the Console.
 - The ⚪ status (row needs a look, see note) is now explained in the legend when it appears.
 - Notes footer: one paragraph per note, so chat apps no longer run them together; long A1 explanations get their
   own paragraph.
