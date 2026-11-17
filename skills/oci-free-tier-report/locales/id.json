@@ -17,6 +17,7 @@
   "legend.warn": "70-90%",
   "legend.high": "≥90%",
   "legend.over": "lewat batas",
+  "legend.info": "lihat catatan",
   "col.status": "Status",
   "col.used": "Terpakai",
   "col.limit": "Batas",

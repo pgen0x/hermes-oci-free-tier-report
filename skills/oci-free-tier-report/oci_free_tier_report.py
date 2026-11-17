@@ -149,6 +149,7 @@ EN: dict[str, str] = {
     "legend.warn": "70-90%",
     "legend.high": "≥90%",
     "legend.over": "over",
+    "legend.info": "see note",
     "col.status": "Status",
     "col.used": "Used",
     "col.limit": "Limit",
@@ -614,9 +615,9 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
         **a1_limits(),
     )
     if any(r.status == "info" for r in hours.rows):
-        hours.note += " " + T("note.a1_hours.payg_doubt")
+        hours.note += "\n\n" + T("note.a1_hours.payg_doubt")
     if ctx.account == "unknown":
-        hours.note += " " + T("note.a1_hours.unknown")
+        hours.note += "\n\n" + T("note.a1_hours.unknown")
         hours.rows[0].status = "info" if hours.rows[0].status == "ok" else hours.rows[0].status
     # place right after Compute when present
     idx = next((n + 1 for n, s in enumerate(rep.sections) if s.id == "compute"), len(rep.sections))
@@ -874,7 +875,7 @@ def _notes(rep: Report, bold: bool) -> list[str]:
             continue
         worst = max(flagged, key=order.index)
         title = f"**{sec.title}**" if bold else sec.title
-        out.append(f"{icons[worst]} {title}: {sec.note}")
+        out += ["", f"{icons[worst]} {title}: {sec.note}"]  # blank line → one paragraph per note
     return ["", f"**{T('notes.title')}**" if bold else T("notes.title")] + out if out else []
 
 
@@ -883,9 +884,10 @@ def _footer(rep: Report, bold: bool = True) -> list[str]:
     out = _notes(rep, bold)
     if rep.errors:
         out += [""] + [f"{icons['error']} {e}" for e in rep.errors]
-    legend = "  ".join(
-        f"{icons[k]} {T('legend.' + k)}" for k in ("ok", "warn", "high", "over")
-    )
+    keys = ["ok", "warn", "high", "over"]
+    if any(r.status == "info" for sec in rep.sections for r in sec.rows):
+        keys.append("info")
+    legend = "  ".join(f"{icons[k]} {T('legend.' + k)}" for k in keys)
     return out + ["", legend]
 
 
