@@ -97,10 +97,15 @@ Dengan `--lang id`, setiap bagian tampil sebagai tabel asli di Telegram (tenancy
 hal yang perlu diperhatikan:
 
 > **Catatan**
-> 🟠 **Compute**: A1 sudah di batas gratis (4 OCPU / 24 GB) — masih gratis, tapi instance A1 baru atau yang lebih besar akan ditagih.
-> ⚪ **Jam A1**: Kuota gratis per bulan (PAYG): 3.000 OCPU-h + 18.000 GB-h. … Bulan ini melewati 1.500 / 9.000 — kalau
-> baris Biaya suatu saat menunjukkan tagihan A1, kecilkan A1 ke 2 OCPU / 12 GB.
-> 🟠 **Storage**: Boot + block volume sudah memakai seluruh 200 GB gratis — jangan buat volume baru atau perbesar boot volume.
+>
+> 🟠 **Compute**: A1 di batas gratis (4 OCPU / 24 GB) — masih gratis; A1 baru atau yang lebih besar akan ditagih.
+>
+> ⚪ **Jam A1**: Terpakai 637 / 3.000 OCPU-h dan 3.824 / 18.000 GB-h (kuota PAYG); akhir bulan ~2.077 OCPU-h. Reset setiap tanggal 1.<br>
+> ↳ Di atas kuota Free Tier 1.500 / 9.000, dan halaman Oracle tidak sepakat soal kuota PAYG. Kalau Biaya suatu saat menunjukkan tagihan A1, kecilkan ke 2 OCPU / 12 GB.
+>
+> 🟠 **Storage**: 200 dari 200 GB terpakai — jangan tambah volume atau perbesar boot volume.
+>
+> ✅ <70%  🟡 70-90%  🟠 ≥90%  🔴 lewat batas  ⚪ lihat catatan
 
 Format `mono` (Discord, WhatsApp) tampil seperti ini:
 
