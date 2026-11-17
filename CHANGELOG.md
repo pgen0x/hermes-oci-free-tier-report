@@ -5,6 +5,12 @@ minor versions may change paths or options. The version lives in two places that
 `version:` in `skills/oci-free-tier-report/SKILL.md` and `__version__` in
 `skills/oci-free-tier-report/oci_free_tier_report.py`.
 
+## [0.1.3] — 2026-11-17
+
+### Changed
+- Tidier Notes footer: shorter notes (one or two sentences each), A1 hours shows OCPU-h and GB-h used against the
+  quota, and follow-up explanations hang under their note with `↳` instead of floating as a separate paragraph.
+
 ## [0.1.2] — 2026-11-17
 
 ### Fixed

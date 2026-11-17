@@ -95,10 +95,15 @@ On Telegram every section arrives as a native table (this tenancy is Pay As You 
 attention:
 
 > **Notes**
-> 🟠 **Compute**: A1 is at the free cap (4 OCPU / 24 GB) — still free, but any new or bigger A1 instance would be billed.
-> ⚪ **A1 hours**: Free monthly quota (PAYG): 3,000 OCPU-h + 18,000 GB-h. … This month goes past 1,500 / 9,000 — if the
-> Cost rows ever show A1 charges, shrink A1 to 2 OCPU / 12 GB.
-> 🟠 **Storage**: Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume.
+>
+> 🟠 **Compute**: A1 at the free cap (4 OCPU / 24 GB) — still free; a new or bigger A1 would be billed.
+>
+> ⚪ **A1 hours**: Used 637 / 3,000 OCPU-h and 3,824 / 18,000 GB-h (PAYG quota); the month ends at ~2,077 OCPU-h. Resets on the 1st.<br>
+> ↳ Above the Free Tier 1,500 / 9,000, and Oracle's pages disagree on the PAYG quota. If Cost ever shows A1 charges, shrink to 2 OCPU / 12 GB.
+>
+> 🟠 **Storage**: 200 of 200 GB used — don't add volumes or enlarge the boot volume.
+>
+> ✅ <70%  🟡 70-90%  🟠 ≥90%  🔴 over  ⚪ see note
 
 The `mono` format (Discord, WhatsApp) looks like:
 

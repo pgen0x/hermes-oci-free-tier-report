@@ -56,7 +56,7 @@ import string
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 
 _CONF: dict[str, str] = {}       # oci_free_tier_report.conf
@@ -194,16 +194,16 @@ EN: dict[str, str] = {
     "alert.adb_paid": "{n} Autonomous Database(s) are not Always Free.",
     "alert.other_over": "Load balancer / NLB / Autonomous DB count exceeds the free limit.",
     "note.compute.over": "Running A1 capacity ({ocpu} OCPU / {mem} GB) is above the free {lim_ocpu} OCPU / {lim_mem} GB — the extra is billed. Shrink or stop an A1 instance.",
-    "note.compute.at_cap": "A1 is at the free cap ({ocpu} OCPU / {mem} GB) — still free, but any new or bigger A1 instance would be billed.",
+    "note.compute.at_cap": "A1 at the free cap ({ocpu} OCPU / {mem} GB) — still free; a new or bigger A1 would be billed.",
     "note.compute.ok": "A1 uses {ocpu} of {lim_ocpu} OCPU and {mem} of {lim_mem} GB — {free_ocpu} OCPU / {free_mem} GB still free to use.",
     "note.compute.micro": "{n} of 2 free E2.1.Micro VMs in use.",
     "note.cost.charged": "Something billable is running — the rows above show which service is charging you.",
     "note.cost.ok": "Billed cost from Oracle's Usage API (data lags a few hours). 0.00 means you are not paying anything.",
-    "note.a1_hours": "Free monthly quota ({account}): {quota_ocpu} OCPU-h + {quota_gb} GB-h. Used so far {used} OCPU-h; at the current size the month ends at ~{projected}. A {lim_ocpu} OCPU / {lim_mem} GB A1 running 24/7 needs at most {max} OCPU-h this month, so it never runs over. Resets on the 1st.",
-    "note.a1_hours.payg_doubt": "Oracle's Always Free page lists 1,500 OCPU-h / 9,000 GB-h for every tenancy, while the Arm pricing page gives paid tenancies 3,000 / 18,000. This month goes past 1,500 / 9,000 — if the Cost rows ever show A1 charges, shrink A1 to 2 OCPU / 12 GB.",
-    "note.a1_hours.unknown": "Account type unknown (the VM could not read the tenancy subscription), so the stricter Always Free quota is used. Paid (PAYG) tenancies get 3,000 OCPU-h / 18,000 GB-h.",
+    "note.a1_hours": "Used {used} / {quota_ocpu} OCPU-h and {used_gb} / {quota_gb} GB-h ({account} quota); the month ends at ~{projected} OCPU-h. Resets on the 1st.",
+    "note.a1_hours.payg_doubt": "↳ Above the Free Tier 1,500 / 9,000, and Oracle's pages disagree on the PAYG quota. If Cost ever shows A1 charges, shrink to 2 OCPU / 12 GB.",
+    "note.a1_hours.unknown": "↳ Account type unknown (subscription not readable), so the stricter Free Tier quota is used; PAYG gets 3,000 / 18,000.",
     "note.storage.over": "Volumes total {total} GB, {over} GB over the free 200 GB — delete or shrink a volume.",
-    "note.storage.full": "Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume.",
+    "note.storage.full": "200 of 200 GB used — don't add volumes or enlarge the boot volume.",
     "note.storage.ok": "{left} GB of the free 200 GB block storage still available.",
     "note.storage.backups": "{n} volume backups — only 5 are free, delete the oldest.",
     "note.storage.object": "Object Storage holds {gb} GB — only 20 GB is free.",
@@ -610,18 +610,19 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
     max_ocpu = LIMITS["a1_ocpu"] * (next_month - month_start).days * 24
     hours.note = T(
         "note.a1_hours",
-        account=T("acct." + ctx.account),
+        account=T("acct." + ("payg" if ctx.account == "payg" else "free")),  # unknown uses the Free Tier quota
         quota_ocpu=num(LIMITS["a1_ocpu_hours"]),
         quota_gb=num(LIMITS["a1_gb_hours"]),
         used=num(a1_ocpu_h),
+        used_gb=num(a1_gb_h),
         projected=num(proj_ocpu),
         max=num(max_ocpu),
         **a1_limits(),
     )
     if any(r.status == "info" for r in hours.rows):
-        hours.note += "\n\n" + T("note.a1_hours.payg_doubt")
+        hours.note += "\n" + T("note.a1_hours.payg_doubt")
     if ctx.account == "unknown":
-        hours.note += "\n\n" + T("note.a1_hours.unknown")
+        hours.note += "\n" + T("note.a1_hours.unknown")
         hours.rows[0].status = "info" if hours.rows[0].status == "ok" else hours.rows[0].status
     # place right after Compute when present
     idx = next((n + 1 for n, s in enumerate(rep.sections) if s.id == "compute"), len(rep.sections))
