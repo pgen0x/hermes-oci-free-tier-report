@@ -77,7 +77,8 @@ text unchanged — no LLM call, no API key on disk, nothing to pay.
 
 ## Example report
 
-On Telegram every section arrives as a native table:
+On Telegram every section arrives as a native table (this tenancy is Pay As You Go, so the header reads
+`ap-batam-1 · PAYG · 07:00 WIB`):
 
 | Compute | Used | Limit | Status |
 |:---|---:|---:|:---:|
@@ -87,14 +88,16 @@ On Telegram every section arrives as a native table:
 
 | A1 hours | Used | Proj. | Limit | Status |
 |:---|---:|---:|---:|:---:|
-| OCPU-h | 637 | 2,077 | 3,000 | ✅ |
-| GB-h | 3,824 | 12,464 | 18,000 | ✅ |
+| OCPU-h | 637 | 2,077 | 3,000 | ⚪ |
+| GB-h | 3,824 | 12,464 | 18,000 | ⚪ |
 
 …plus **Cost**, **Storage**, **Network**, **Idle** and **Other** tables, then a footer that only explains what needs
 attention:
 
 > **Notes**
 > 🟠 **Compute**: A1 is at the free cap (4 OCPU / 24 GB) — still free, but any new or bigger A1 instance would be billed.
+> ⚪ **A1 hours**: Free monthly quota (PAYG): 3,000 OCPU-h + 18,000 GB-h. … This month goes past 1,500 / 9,000 — if the
+> Cost rows ever show A1 charges, shrink A1 to 2 OCPU / 12 GB.
 > 🟠 **Storage**: Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume.
 
 The `mono` format (Discord, WhatsApp) looks like:
@@ -106,8 +109,8 @@ A1 RAM (GB)      24    24 🟠
 E2.1.Micro VMs    0     2 ✅
 
 A1 HOURS  Used  Proj.  Limit
-OCPU-h     637  2,077  3,000 ✅
-GB-h     3,824 12,464 18,000 ✅
+OCPU-h     637  2,077  3,000 ⚪
+GB-h     3,824 12,464 18,000 ⚪
 ```
 
 ## Install with one message to your Hermes bot
@@ -219,8 +222,8 @@ administrator has to create them.
 | Area | Always Free limit | Source |
 |---|---|---|
 | Billed cost, yesterday and month to date | must be 0 | Usage API |
-| Ampere A1 Flex running OCPU / memory | 4 OCPU / 24 GB | Compute API |
-| A1 OCPU-hours / GB-hours per month (used + projection) | 3,000 / 18,000 | Usage API |
+| Ampere A1 Flex running OCPU / memory | Free Tier: 2 OCPU / 12 GB · PAYG: 4 OCPU / 24 GB | Compute API |
+| A1 OCPU-hours / GB-hours per month (used + projection) | Free Tier: 1,500 / 9,000 · PAYG: 3,000 / 18,000 | Usage API |
 | VM.Standard.E2.1.Micro | 2 instances | Compute API |
 | Any other compute shape | not free → alert | Compute API |
 | Boot + block volumes | 200 GB | Block Storage API |
@@ -260,10 +263,23 @@ match what you see and paste in the Oracle Console. Pull requests adding `skills
 
 ## FAQ
 
+**Is my account Free Tier or Pay As You Go, and why does it matter?**
+The report reads it from your tenancy subscription and shows it in the header (`Free Tier`, `PAYG`, or
+`account type ?` if it can't tell). Oracle gives the two different Ampere A1 allowances:
+
+- **Free Tier** (never upgraded): 1,500 OCPU-hours / 9,000 GB-hours a month, "equivalent to 2 OCPUs and 12 GB of
+  memory" ([Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)). A 4 OCPU / 24 GB A1 on a Free Tier account shows 🔴.
+- **Pay As You Go**: "Each paid tenancy gets the first 3,000 OCPU hours and 18,000 GB hours per month for free"
+  ([Arm pricing](https://www.oracle.com/cloud/compute/arm/pricing/)) — 4 OCPU / 24 GB stays free.
+
+Oracle's Always Free page also says "All tenancies get the first 1,500…", so for PAYG accounts above 1,500 / 9,000 the
+A1 hours rows show ⚪ with a note. When the type is unknown the report uses the stricter Free Tier quota.
+
 **Will I be charged if my Ampere A1 shows 4/4 OCPU?**
-No. 🟠 means *at* the limit, not over it. A 4 OCPU / 24 GB A1 running 24/7 uses at most 2,976 OCPU-hours and
-17,856 GB-hours in a 31-day month — below the 3,000 / 18,000 free quota, which resets every month. The cost rows are
-the final word: `0.00` means you are not paying.
+On a PAYG account, no: 🟠 means *at* the limit, not over it. A 4 OCPU / 24 GB A1 running 24/7 uses at most 2,976
+OCPU-hours and 17,856 GB-hours in a 31-day month — below the 3,000 / 18,000 paid-tenancy quota, which resets every
+month. On a Free Tier account the limit is 2 / 12 and the row shows 4/2 🔴. Either way the cost rows are the final word:
+`0.00` means you are not paying.
 
 **What is Oracle's idle instance reclamation?**
 On Free Tier accounts (not upgraded to Pay As You Go), Oracle may reclaim an Always Free VM whose 7-day 95th

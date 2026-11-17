@@ -5,6 +5,20 @@ minor versions may change paths or options. The version lives in two places that
 `version:` in `skills/oci-free-tier-report/SKILL.md` and `__version__` in
 `skills/oci-free-tier-report/oci_free_tier_report.py`.
 
+## [0.1.1] — 2026-11-17
+
+### Fixed
+- Ampere A1 limits now depend on the account type ([#7](https://github.com/pgen0x/hermes-oci-free-tier-report/issues/7)).
+  Oracle cut the Always Free A1 allowance to 1,500 OCPU-h / 9,000 GB-h (2 OCPU / 12 GB); paid (Pay As You Go)
+  tenancies keep 3,000 / 18,000 (4 / 24). The report used 4 / 24 for everyone, so Free Tier accounts running a
+  4 OCPU / 24 GB A1 showed green while over the limit.
+
+### Added
+- Account type (`Free Tier`, `PAYG`, `account type ?`) read from the tenancy subscription, shown in the header, the
+  JSON output (`account`) and `--check`. Unknown falls back to the stricter Free Tier quota.
+- PAYG months above 1,500 OCPU-h / 9,000 GB-h get a ⚪ note, because Oracle's Always Free page and Arm pricing page
+  disagree on the paid quota.
+
 ## [0.1.0] — 2026-11-16
 
 First public release.

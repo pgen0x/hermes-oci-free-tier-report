@@ -79,7 +79,8 @@ itu apa adanya — tanpa LLM, tanpa API key di disk, tanpa biaya.
 
 ## Contoh laporan
 
-Dengan `--lang id`, setiap bagian tampil sebagai tabel asli di Telegram:
+Dengan `--lang id`, setiap bagian tampil sebagai tabel asli di Telegram (tenancy ini Pay As You Go, jadi headernya
+`ap-batam-1 · PAYG · 07:00 WIB`):
 
 | Compute | Terpakai | Batas | Status |
 |:---|---:|---:|:---:|
@@ -89,14 +90,16 @@ Dengan `--lang id`, setiap bagian tampil sebagai tabel asli di Telegram:
 
 | Jam A1 | Terpakai | Proyeksi | Batas | Status |
 |:---|---:|---:|---:|:---:|
-| OCPU-h | 637 | 2.077 | 3.000 | ✅ |
-| GB-h | 3.824 | 12.464 | 18.000 | ✅ |
+| OCPU-h | 637 | 2.077 | 3.000 | ⚪ |
+| GB-h | 3.824 | 12.464 | 18.000 | ⚪ |
 
 …ditambah tabel **Biaya**, **Storage**, **Jaringan**, **Idle**, dan **Lainnya**, lalu footer yang hanya menjelaskan
 hal yang perlu diperhatikan:
 
 > **Catatan**
 > 🟠 **Compute**: A1 sudah di batas gratis (4 OCPU / 24 GB) — masih gratis, tapi instance A1 baru atau yang lebih besar akan ditagih.
+> ⚪ **Jam A1**: Kuota gratis per bulan (PAYG): 3.000 OCPU-h + 18.000 GB-h. … Bulan ini melewati 1.500 / 9.000 — kalau
+> baris Biaya suatu saat menunjukkan tagihan A1, kecilkan A1 ke 2 OCPU / 12 GB.
 > 🟠 **Storage**: Boot + block volume sudah memakai seluruh 200 GB gratis — jangan buat volume baru atau perbesar boot volume.
 
 Format `mono` (Discord, WhatsApp) tampil seperti ini:
@@ -108,8 +111,8 @@ A1 RAM (GB)         24    24 🟠
 VM E2.1.Micro        0     2 ✅
 
 JAM A1 Terpakai Proyeksi  Batas
-OCPU-h      637    2.077  3.000 ✅
-GB-h      3.824   12.464 18.000 ✅
+OCPU-h      637    2.077  3.000 ⚪
+GB-h      3.824   12.464 18.000 ⚪
 ```
 
 ## Install dengan satu pesan ke bot Hermes
@@ -222,8 +225,8 @@ memberi izin ke dirinya sendiri; administrator tenancy yang harus membuatnya.
 | Area | Batas Always Free | Sumber |
 |---|---|---|
 | Biaya kemarin dan bulan ini | harus 0 | Usage API |
-| OCPU / memori Ampere A1 Flex yang aktif | 4 OCPU / 24 GB | Compute API |
-| OCPU-jam / GB-jam A1 per bulan (terpakai + proyeksi) | 3.000 / 18.000 | Usage API |
+| OCPU / memori Ampere A1 Flex yang aktif | Free Tier: 2 OCPU / 12 GB · PAYG: 4 OCPU / 24 GB | Compute API |
+| OCPU-jam / GB-jam A1 per bulan (terpakai + proyeksi) | Free Tier: 1.500 / 9.000 · PAYG: 3.000 / 18.000 | Usage API |
 | VM.Standard.E2.1.Micro | 2 instance | Compute API |
 | Shape compute lain | tidak gratis → peringatan | Compute API |
 | Boot + block volume | 200 GB | Block Storage API |
@@ -263,10 +266,24 @@ diterima.
 
 ## FAQ
 
+**Akun saya Free Tier atau Pay As You Go, dan apa bedanya?**
+Laporan membacanya dari subscription tenancy dan menampilkannya di header (`Free Tier`, `PAYG`, atau `jenis akun ?`
+kalau tidak bisa dibaca). Oracle memberi dua jatah Ampere A1 yang berbeda:
+
+- **Free Tier** (belum pernah upgrade): 1.500 OCPU-jam / 9.000 GB-jam per bulan, "equivalent to 2 OCPUs and 12 GB of
+  memory" ([Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)). A1 4 OCPU / 24 GB di akun Free Tier tampil 🔴.
+- **Pay As You Go**: "Each paid tenancy gets the first 3,000 OCPU hours and 18,000 GB hours per month for free"
+  ([harga Arm](https://www.oracle.com/cloud/compute/arm/pricing/)) — 4 OCPU / 24 GB tetap gratis.
+
+Halaman Always Free Oracle juga menulis "All tenancies get the first 1,500…", jadi untuk akun PAYG di atas
+1.500 / 9.000 baris jam A1 tampil ⚪ dengan catatan. Kalau jenis akun tidak diketahui, laporan memakai kuota Free Tier
+yang lebih ketat.
+
 **Apakah saya ditagih kalau Ampere A1 menunjukkan 4/4 OCPU?**
-Tidak. 🟠 berarti *tepat di* batas, bukan lewat. A1 4 OCPU / 24 GB yang menyala 24/7 memakai paling banyak 2.976
-OCPU-jam dan 17.856 GB-jam di bulan 31 hari — di bawah kuota gratis 3.000 / 18.000 yang reset setiap bulan. Baris
-biaya adalah patokan akhirnya: `0,00` berarti kamu tidak membayar.
+Di akun PAYG, tidak: 🟠 berarti *tepat di* batas, bukan lewat. A1 4 OCPU / 24 GB yang menyala 24/7 memakai paling
+banyak 2.976 OCPU-jam dan 17.856 GB-jam di bulan 31 hari — di bawah kuota tenancy berbayar 3.000 / 18.000 yang reset
+setiap bulan. Di akun Free Tier batasnya 2 / 12 dan barisnya tampil 4/2 🔴. Apa pun jenis akunnya, baris biaya adalah
+patokan akhirnya: `0,00` berarti kamu tidak membayar.
 
 **Apa itu idle instance reclamation dari Oracle?**
 Di akun Free Tier (yang belum di-upgrade ke Pay As You Go), Oracle bisa mengambil kembali VM Always Free yang CPU
