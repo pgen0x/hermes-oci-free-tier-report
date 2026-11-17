@@ -96,10 +96,10 @@ except ImportError:  # pragma: no cover
 
 GB = 1024**3
 LIMITS = {
-    "a1_ocpu": 4,
-    "a1_mem_gb": 24,
-    "a1_ocpu_hours": 3000,
-    "a1_gb_hours": 18000,
+    "a1_ocpu": 2,  # A1 values are set per account type by apply_account_limits()
+    "a1_mem_gb": 12,
+    "a1_ocpu_hours": 1500,
+    "a1_gb_hours": 9000,
     "micro_count": 2,
     "block_gb": 200,
     "backups": 5,
@@ -110,6 +110,12 @@ LIMITS = {
     "adb": 2,
     "idle_pct": 20.0,
 }
+# Ampere A1 monthly allowance by account type (OCPU, GB, OCPU-hours, GB-hours).
+# Always Free tenancies: 1,500 OCPU-h / 9,000 GB-h ("equivalent to 2 OCPUs and 12 GB"), per
+# https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
+# Paid tenancies: "the first 3,000 OCPU hours and 18,000 GB hours per month for free", per
+# https://www.oracle.com/cloud/compute/arm/pricing/ . An unknown account type gets the stricter free values.
+A1_ALLOWANCE = {"payg": (4, 24, 3000, 18000), "free": (2, 12, 1500, 9000)}
 FREE_SHAPES = {"VM.Standard.A1.Flex", "VM.Standard.E2.1.Micro"}
 LIVE_STATES = {"RUNNING", "STARTING", "PROVISIONING", "STOPPING"}
 IMDS = "http://169.254.169.254/opc/v2"
@@ -135,6 +141,9 @@ EN: dict[str, str] = {
     "header.alerts": "{n} alert(s)",
     "header.incomplete": "Some checks failed — status incomplete",
     "header.ok": "All within Always Free — cost 0",
+    "acct.payg": "PAYG",
+    "acct.free": "Free Tier",
+    "acct.unknown": "account type ?",
     "notes.title": "Notes",
     "legend.ok": "<70%",
     "legend.warn": "70-90%",
@@ -173,7 +182,7 @@ EN: dict[str, str] = {
     "row.adb": "Autonomous DBs",
     "row.adb_paid": "Paid ADBs",
     "alert.paid_shape": "Instance '{name}' uses paid shape {shape}.",
-    "alert.a1_over": "Live A1 capacity exceeds 4 OCPU / 24 GB.",
+    "alert.a1_over": "Live A1 capacity exceeds {lim_ocpu} OCPU / {lim_mem} GB.",
     "alert.micro_over": "More than 2 E2.1.Micro instances.",
     "alert.charged": "You were charged {amount} {currency} this month — something is outside Always Free!",
     "alert.a1_hours_over": "A1 {unit} projected to exceed the monthly free quota.",
@@ -183,13 +192,15 @@ EN: dict[str, str] = {
     "alert.idle": "'{name}' is idle by Oracle's rule (7-day p95 < 20%) — Free Tier accounts may get it reclaimed.",
     "alert.adb_paid": "{n} Autonomous Database(s) are not Always Free.",
     "alert.other_over": "Load balancer / NLB / Autonomous DB count exceeds the free limit.",
-    "note.compute.over": "Running A1 capacity ({ocpu} OCPU / {mem} GB) is above the free 4 OCPU / 24 GB — the extra is billed. Shrink or stop an A1 instance.",
+    "note.compute.over": "Running A1 capacity ({ocpu} OCPU / {mem} GB) is above the free {lim_ocpu} OCPU / {lim_mem} GB — the extra is billed. Shrink or stop an A1 instance.",
     "note.compute.at_cap": "A1 is at the free cap ({ocpu} OCPU / {mem} GB) — still free, but any new or bigger A1 instance would be billed.",
-    "note.compute.ok": "A1 uses {ocpu} of 4 OCPU and {mem} of 24 GB — {free_ocpu} OCPU / {free_mem} GB still free to use.",
+    "note.compute.ok": "A1 uses {ocpu} of {lim_ocpu} OCPU and {mem} of {lim_mem} GB — {free_ocpu} OCPU / {free_mem} GB still free to use.",
     "note.compute.micro": "{n} of 2 free E2.1.Micro VMs in use.",
     "note.cost.charged": "Something billable is running — the rows above show which service is charging you.",
     "note.cost.ok": "Billed cost from Oracle's Usage API (data lags a few hours). 0.00 means you are not paying anything.",
-    "note.a1_hours": "Free monthly quota: 3,000 OCPU-h + 18,000 GB-h. Used so far {used} OCPU-h; at the current size the month ends at ~{projected}. A 4 OCPU / 24 GB A1 running 24/7 needs at most {max} OCPU-h this month, so it never runs over. Resets on the 1st.",
+    "note.a1_hours": "Free monthly quota ({account}): {quota_ocpu} OCPU-h + {quota_gb} GB-h. Used so far {used} OCPU-h; at the current size the month ends at ~{projected}. A {lim_ocpu} OCPU / {lim_mem} GB A1 running 24/7 needs at most {max} OCPU-h this month, so it never runs over. Resets on the 1st.",
+    "note.a1_hours.payg_doubt": "Oracle's Always Free page lists 1,500 OCPU-h / 9,000 GB-h for every tenancy, while the Arm pricing page gives paid tenancies 3,000 / 18,000. This month goes past 1,500 / 9,000 — if the Cost rows ever show A1 charges, shrink A1 to 2 OCPU / 12 GB.",
+    "note.a1_hours.unknown": "Account type unknown (the VM could not read the tenancy subscription), so the stricter Always Free quota is used. Paid (PAYG) tenancies get 3,000 OCPU-h / 18,000 GB-h.",
     "note.storage.over": "Volumes total {total} GB, {over} GB over the free 200 GB — delete or shrink a volume.",
     "note.storage.full": "Boot + block volumes use the full free 200 GB — don't create new volumes or enlarge the boot volume.",
     "note.storage.ok": "{left} GB of the free 200 GB block storage still available.",
@@ -350,6 +361,7 @@ class Report:
     timezone: str = ""
     region: str = ""
     currency: str = ""
+    account: str = ""  # payg | free | unknown
     lang: str = "en"
     sections: list[Section] = field(default_factory=list)
     alerts: list[str] = field(default_factory=list)
@@ -425,6 +437,8 @@ class Ctx:
         except oci.exceptions.ServiceError:
             pass  # fall back to the root compartment only
         self.ads = [a.name for a in identity.list_availability_domains(self.tenancy).data]
+        self.account = detect_account(self)
+        apply_account_limits(self.account)
 
     def client(self, cls, region: str | None = None):
         c = cls(self.cfg, **self.kw)
@@ -435,6 +449,28 @@ class Ctx:
     @staticmethod
     def list_all(fn, *args, **kwargs):
         return oci.pagination.list_call_get_all_results(fn, *args, **kwargs).data
+
+
+def detect_account(ctx: "Ctx") -> str:
+    """'payg' for a paid tenancy, 'free' for Always Free / trial, 'unknown' if the subscription can't be read."""
+    try:
+        sc = ctx.client(oci.tenant_manager_control_plane.SubscriptionClient, ctx.home_region)
+        items = ctx.list_all(sc.list_subscriptions, compartment_id=ctx.tenancy)
+    except Exception:
+        return "unknown"
+    models = {str(getattr(x, "payment_model", None) or "").upper() for x in items} - {""}
+    if any(not any(w in m for w in ("FREE", "TRIAL", "PROMO")) for m in models):
+        return "payg"
+    return "free" if items else "unknown"
+
+
+def apply_account_limits(account: str) -> None:
+    ocpu, mem, ocpu_h, gb_h = A1_ALLOWANCE.get(account, A1_ALLOWANCE["free"])
+    LIMITS.update(a1_ocpu=ocpu, a1_mem_gb=mem, a1_ocpu_hours=ocpu_h, a1_gb_hours=gb_h)
+
+
+def a1_limits() -> dict:
+    return {"lim_ocpu": num(LIMITS["a1_ocpu"]), "lim_mem": num(LIMITS["a1_mem_gb"])}
 
 
 # ---------------------------------------------------------------- collectors
@@ -471,7 +507,7 @@ def collect_compute(ctx: Ctx, rep: Report) -> list:
     sec = rep.sections[-1]
     free_ocpu = LIMITS["a1_ocpu"] - ctx.a1_live_ocpu
     free_mem = LIMITS["a1_mem_gb"] - ctx.a1_live_mem
-    cap = {"ocpu": num(ctx.a1_live_ocpu), "mem": num(ctx.a1_live_mem)}
+    cap = {"ocpu": num(ctx.a1_live_ocpu), "mem": num(ctx.a1_live_mem), **a1_limits()}
     if free_ocpu < 0 or free_mem < 0:
         sec.note = T("note.compute.over", **cap)
     elif free_ocpu == 0 or free_mem == 0:
@@ -481,7 +517,7 @@ def collect_compute(ctx: Ctx, rep: Report) -> list:
     if micro:
         sec.note += " " + T("note.compute.micro", n=micro)
     if ctx.a1_live_ocpu > LIMITS["a1_ocpu"] or ctx.a1_live_mem > LIMITS["a1_mem_gb"]:
-        rep.alerts.append(T("alert.a1_over"))
+        rep.alerts.append(T("alert.a1_over", **a1_limits()))
     if micro > LIMITS["micro_count"]:
         rep.alerts.append(T("alert.micro_over"))
     return [i for i in instances if i.lifecycle_state == "RUNNING"]
@@ -552,10 +588,14 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
         (T("row.gb_h"), a1_gb_h, "a1_gb_hours", ctx.a1_live_mem),
     ):
         proj = used + live * hours_left
+        status = level(proj, LIMITS[key])
+        free_quota = A1_ALLOWANCE["free"][2 if key == "a1_ocpu_hours" else 3]
+        if ctx.account == "payg" and status == "ok" and proj > free_quota:
+            status = "info"  # within the paid allowance, above the Always Free one — see note
         hours.rows.append(
             Row(
                 [label, num(used), num(proj), num(LIMITS[key])],
-                level(proj, LIMITS[key]),
+                status,
                 {"used": used, "projected": proj, "limit": LIMITS[key]},
             )
         )
@@ -563,7 +603,21 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
             rep.alerts.append(T("alert.a1_hours_over", unit=label))
     proj_ocpu = a1_ocpu_h + ctx.a1_live_ocpu * hours_left
     max_ocpu = LIMITS["a1_ocpu"] * (next_month - month_start).days * 24
-    hours.note = T("note.a1_hours", used=num(a1_ocpu_h), projected=num(proj_ocpu), max=num(max_ocpu))
+    hours.note = T(
+        "note.a1_hours",
+        account=T("acct." + ctx.account),
+        quota_ocpu=num(LIMITS["a1_ocpu_hours"]),
+        quota_gb=num(LIMITS["a1_gb_hours"]),
+        used=num(a1_ocpu_h),
+        projected=num(proj_ocpu),
+        max=num(max_ocpu),
+        **a1_limits(),
+    )
+    if any(r.status == "info" for r in hours.rows):
+        hours.note += " " + T("note.a1_hours.payg_doubt")
+    if ctx.account == "unknown":
+        hours.note += " " + T("note.a1_hours.unknown")
+        hours.rows[0].status = "info" if hours.rows[0].status == "ok" else hours.rows[0].status
     # place right after Compute when present
     idx = next((n + 1 for n, s in enumerate(rep.sections) if s.id == "compute"), len(rep.sections))
     rep.sections.insert(idx, hours)
@@ -761,6 +815,7 @@ def build_report() -> Report:
     )
     ctx = Ctx()  # auth failure propagates → non-zero exit → Hermes failure alert
     rep.region = ctx.region
+    rep.account = ctx.account
     running: list = []
     steps = [
         (T("sec.compute"), lambda: running.extend(collect_compute(ctx, rep))),
@@ -793,7 +848,8 @@ def _header(rep: Report, bold: bool) -> list[str]:
     icons = _icons()
     b = (lambda s: f"**{s}**") if bold else (lambda s: s)
     when = dt.datetime.fromisoformat(rep.generated_at)
-    out = [b(T("title", date=fmt_date(when))), f"{rep.region} · {when:%H:%M} {rep.timezone}", ""]
+    where = [rep.region] + ([T("acct." + rep.account)] if rep.account else [])
+    out = [b(T("title", date=fmt_date(when))), " · ".join(where + [f"{when:%H:%M} {rep.timezone}"]), ""]
     if rep.alerts:
         out.append(f"{icons['over']} {b(T('header.alerts', n=len(rep.alerts)))}")
         out += [f"• {a}" for a in rep.alerts]
@@ -960,7 +1016,9 @@ def preflight() -> int:
         if auth == "instance_principal" and not instance_id:
             print("\nInstance principal only works on an OCI VM. Elsewhere use OCI_AUTH=config with ~/.oci/config.")
         return 1
-    print(f"auth         : OK (home region {ctx.home_region})\n")
+    print(f"auth         : OK (home region {ctx.home_region})")
+    quota = A1_ALLOWANCE.get(ctx.account, A1_ALLOWANCE["free"])
+    print(f"account type : {ctx.account} → A1 quota {quota[2]:,} OCPU-h / {quota[3]:,} GB-h per month\n")
 
     probes = {
         "usage-report (cost)": lambda: collect_cost(ctx, Report()),
