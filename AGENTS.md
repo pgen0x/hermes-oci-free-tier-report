@@ -18,11 +18,16 @@ bash <skill dir>/install.sh --profile <hermes profile> --deliver <platform>:<cha
 - Update: `hermes [-p <profile>] skills update oci-free-tier-report`, then re-run `bash <skill dir>/install.sh` with
   the same `--deliver`.
 
+Optional second skill: `skills/oci-free-tier-guard/` (auto-downscale / stop before A1 leaves the free quota).
+Its runbook is [`skills/oci-free-tier-guard/SKILL.md`](skills/oci-free-tier-guard/SKILL.md); it needs the report
+installed first, and the user — not you — picks `downscale` or `stop`.
+
 Development: everything that ships lives in `skills/oci-free-tier-report/` (the Hermes hub installs that whole
 folder). The report is a single file, `oci_free_tier_report.py` (only dependency: `oci`).
 Every user-facing string lives in the `EN` dict and is rendered with `T(key, **vars)` — never hard-code text.
 When you add or change a key, update every `locales/*.json` and run `--check-locale <code>` for each.
-Bump `version:` in SKILL.md and `__version__` in the script together.
+Bump `version:` in both SKILL.md files and `__version__` in both scripts together (one repo version).
+The guard imports the report module (`Ctx`, `collect_compute`, `collect_cost`, `A1_ALLOWANCE`); keep those stable.
 Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:` …).
 Output is built as sections of rows, then rendered as GFM tables (`markdown`, default) or a monospace table
 (`mono`/`plain`, kept within 34 characters + status icon so it fits a phone screen).
