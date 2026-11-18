@@ -1,9 +1,16 @@
 # Changelog
 
 Versions follow [Semantic Versioning](https://semver.org/). Until 1.0.0 the project is in initial development:
-minor versions may change paths or options. The version lives in two places that must move together:
-`version:` in `skills/oci-free-tier-report/SKILL.md` and `__version__` in
-`skills/oci-free-tier-report/oci_free_tier_report.py`.
+minor versions may change paths or options. The version lives in four places that must move together:
+`version:` in both `skills/*/SKILL.md` and `__version__` in both scripts.
+
+## [Unreleased]
+
+### Added
+- `oci-free-tier-guard`, an optional second skill: an hourly no-agent cron that projects A1 OCPU-h / GB-h to the
+  end of the month and, only when that passes the free quota, previews (`dry-run`, default), resizes (`downscale`)
+  or soft-stops (`stop`) the A1 instances listed in `GUARD_INSTANCES`. Reuses the report's code and venv; silent
+  while inside the quota; never acts when the account type is unknown (#14).
 
 ## [0.1.4] — 2026-11-18
 

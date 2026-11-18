@@ -72,6 +72,7 @@ itu apa adanya — tanpa LLM, tanpa API key di disk, tanpa biaya.
 - [Install dengan satu pesan ke bot Hermes](#install-dengan-satu-pesan-ke-bot-hermes)
 - [Install manual](#install-manual) · [Update](#update)
 - [Setup izin OCI (sekali saja)](#setup-izin-oci-sekali-saja)
+- [Opsional: guard auto-downscale](#opsional-guard-auto-downscale)
 - [Batas Oracle Always Free yang dicek](#batas-oracle-always-free-yang-dicek)
 - [Bahasa](#bahasa)
 - [FAQ](#faq)
@@ -229,6 +230,42 @@ Dynamic group dan policy gratis, dan semuanya hanya-baca.
 (OCID instance sudah terisi, baris policy di code block yang bisa disalin). Begitu policy dibuat, run berikutnya
 mengirim laporan normal — tanpa install ulang. Langkah ini tidak bisa diotomatisasi dari VM: instance tidak bisa
 memberi izin ke dirinya sendiri; administrator tenancy yang harus membuatnya.
+
+## Opsional: guard auto-downscale
+
+Laporan cuma membaca. Kalau kamu juga mau ada yang **bertindak** sebelum A1 keluar dari kuota gratis, pasang skill
+kedua di repo ini, `oci-free-tier-guard`. Dia jalan tiap jam (tanpa LLM, nol token), memproyeksikan OCPU-jam dan
+GB-jam A1 sampai akhir bulan, dan diam selama proyeksinya masih di dalam kuota (PAYG 3.000 / 18.000, Free Tier
+1.500 / 9.000). Kalau tidak:
+
+| `GUARD_MODE` | Yang terjadi |
+|---|---|
+| `dry-run` (default) | Pesan berisi apa yang akan dilakukan, maksimal sekali sehari. Tidak ada yang diubah. |
+| `downscale` | Mengecilkan A1 Flex ke ukuran yang masih tertutup sisa kuota (tidak pernah di bawah `GUARD_MIN`, default 1 OCPU / 6 GB). VM reboot; Hermes nyala lagi sendiri. |
+| `stop` | Soft-stop instance A1, tapi tidak pernah VM yang menjalankan Hermes kecuali kamu izinkan. |
+
+Guard hanya menyentuh instance yang kamu daftarkan (`GUARD_INSTANCES`, default: VM yang menjalankan Hermes), dan butuh
+laporan sudah terpasang. Minta ke bot:
+
+> Install OCI free tier guard dari pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-guard dalam mode dry-run
+
+atau manual:
+
+```bash
+hermes [-p <profile>] skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-guard
+bash <skill dir>/install.sh --profile <profile> --deliver <target yang sama dengan laporan> --mode dry-run
+```
+
+`downscale` dan `stop` butuh satu statement tambahan di policy laporan (dry-run tidak butuh):
+
+```
+Allow dynamic-group oci-free-tier-report to use instances in tenancy where request.permission = 'INSTANCE_UPDATE'
+Allow dynamic-group oci-free-tier-report to use instances in tenancy where request.permission = 'INSTANCE_POWER_ACTIONS'
+```
+
+Yang pertama untuk `downscale`, yang kedua untuk `stop`. Policy OCI tidak bisa dibatasi ke satu instance, jadi guard
+sendiri yang menegakkan `GUARD_INSTANCES`; kedua statement tidak mengizinkan membuat, menghentikan permanen, atau
+menghapus apa pun. Detail: [`skills/oci-free-tier-guard/SKILL.md`](skills/oci-free-tier-guard/SKILL.md).
 
 ## Batas Oracle Always Free yang dicek
 

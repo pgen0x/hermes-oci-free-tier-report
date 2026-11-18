@@ -8,7 +8,7 @@ platforms: [linux]
 metadata:
   hermes:
     tags: [oracle-cloud, oci, always-free, free-tier, cost, cron, monitoring, telegram]
-    related_skills: []
+    related_skills: [oci-free-tier-guard]
 ---
 
 # Oracle Cloud Free Tier monitor (OCI Always Free usage report)
@@ -132,3 +132,5 @@ cron jobs in that profile lose the header too — say so).
 - 🔴 = over the free limit → tell the user what to delete or shrink.
 - Idle 🟠 = 7-day CPU p95 < 20% (and RAM < 20% on A1): Free Tier (non-upgraded) accounts can have the VM reclaimed.
 - The **Notes** footer only lists sections that need attention; no notes means everything is green.
+- If the user wants something to shrink or stop A1 automatically before it is billed, that is the optional
+  `oci-free-tier-guard` skill in the same repo (follow its SKILL.md). This report stays read-only.

@@ -70,6 +70,7 @@ text unchanged — no LLM call, no API key on disk, nothing to pay.
 - [Install with one message to your Hermes bot](#install-with-one-message-to-your-hermes-bot)
 - [Manual install](#manual-install) · [Update](#update)
 - [One-time OCI permission setup](#one-time-oci-permission-setup)
+- [Optional: auto-downscale guard](#optional-auto-downscale-guard)
 - [Oracle Always Free limits checked](#oracle-always-free-limits-checked)
 - [Languages](#languages)
 - [FAQ](#faq)
@@ -227,6 +228,42 @@ Dynamic groups and policies are free, and everything is read-only.
 OCID filled in, policy lines in copyable code blocks). Once the policy exists, the next run sends the normal report
 — no reinstall. It can't be automated from the VM: an instance cannot grant permissions to itself; a tenancy
 administrator has to create them.
+
+## Optional: auto-downscale guard
+
+The report only reads. If you also want something to **act** before A1 leaves the free quota, install the second
+skill in this repo, `oci-free-tier-guard`. It runs hourly (no LLM, zero tokens), projects A1 OCPU-hours and GB-hours
+to the end of the month, and stays silent while that projection is inside the quota (PAYG 3,000 / 18,000, Free Tier
+1,500 / 9,000). When it isn't:
+
+| `GUARD_MODE` | What happens |
+|---|---|
+| `dry-run` (default) | A message with what it would do, at most once a day. Nothing changes. |
+| `downscale` | Resizes A1 Flex to what the remaining quota pays for (never below `GUARD_MIN`, default 1 OCPU / 6 GB). The VM reboots; Hermes comes back by itself. |
+| `stop` | Soft-stops A1 instances, but never the VM running Hermes unless you allow it. |
+
+It only touches the instances you list (`GUARD_INSTANCES`, default: the VM running Hermes), and it needs the report
+installed. Ask your bot:
+
+> Install the OCI free tier guard from pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-guard in dry-run mode
+
+or by hand:
+
+```bash
+hermes [-p <profile>] skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-guard
+bash <skill dir>/install.sh --profile <profile> --deliver <same target as the report> --mode dry-run
+```
+
+`downscale` and `stop` need one more statement in the report's policy (dry-run needs none):
+
+```
+Allow dynamic-group oci-free-tier-report to use instances in tenancy where request.permission = 'INSTANCE_UPDATE'
+Allow dynamic-group oci-free-tier-report to use instances in tenancy where request.permission = 'INSTANCE_POWER_ACTIONS'
+```
+
+The first is for `downscale`, the second for `stop`. OCI can't scope a policy to one instance, so the guard enforces
+`GUARD_INSTANCES` itself; neither statement allows creating, terminating or deleting anything. Details:
+[`skills/oci-free-tier-guard/SKILL.md`](skills/oci-free-tier-guard/SKILL.md).
 
 ## Oracle Always Free limits checked
 
