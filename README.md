@@ -25,16 +25,22 @@ Ampere A1 OCPU and memory hours, block volume and Object Storage, outbound data 
 reclamation risk, load balancers and Autonomous Databases — and tells you when something is close to, or over,
 the free limit.
 
+An optional second skill, the **guard**, goes one step further: when A1 is about to pass the free quota it can
+shrink or stop the VM for you ([Optional: auto-downscale guard](#optional-auto-downscale-guard)).
+
 - **Zero cost, zero AI tokens.** A Hermes `--no-agent` cron job: pure OCI SDK calls, no LLM involved.
 - **Native tables in chat.** Real tables on Telegram (Bot API Rich Messages), aligned tables on Slack, Signal and
   Matrix, a phone-width monospace table on Discord and WhatsApp — picked automatically from the delivery target.
-- **No API keys on disk.** Authenticates as the VM itself (OCI instance principal) with a read-only policy.
+- **No API keys on disk.** Authenticates as the VM itself (OCI instance principal). The report needs only a
+  read-only policy; the optional guard adds one narrowly scoped statement.
 - **Plain-language warnings.** Green sections stay quiet; anything near or over a limit gets a note telling you
   what it means and what not to do.
 - **Your language.** English and Bahasa Indonesia built in; your Hermes bot can add any other language once at
   install time — the daily report still uses no AI.
-- **One sentence to install, one command to update.** Ships as a Hermes skill: your bot installs it with
-  `hermes skills install` and sets up the cron job in the current chat; `hermes skills update` keeps it current.
+- **Optional kill switch.** The guard skill can downscale or stop A1 before it is billed. Dry-run by default, and
+  it only touches the VMs you list.
+- **One sentence to install, one sentence to update.** Ships as Hermes skills: your bot installs them with
+  `hermes skills install`, sets up the cron jobs in the current chat, and updates them when you ask.
 
 > **Requirement: runs only on an OCI compute instance.** Hermes must be installed on the Oracle Cloud VM you want
 > to monitor (Ampere A1 Flex or VM.Standard.E2.1.Micro, Ubuntu / Oracle Linux). The report signs in as that VM via
@@ -49,7 +55,10 @@ hermes skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-re
 ```
 
 Then tell your Hermes bot: **"set up the OCI free tier report in this chat"**. It runs the bundled installer,
-creates a daily 07:00 cron job and sends a first report. Update later with `hermes skills update oci-free-tier-report`.
+creates a daily 07:00 cron job and sends a first report. To update later, tell it **"update the OCI free tier
+report"**.
+
+Optional: want it to shrink or stop A1 before it gets billed? Install the [guard](#optional-auto-downscale-guard) too.
 
 ## How it works
 
@@ -58,11 +67,17 @@ flowchart LR
     A["OCI APIs<br/>Usage · Compute · Storage<br/>Monitoring · Network"] -->|instance principal,<br/>read-only| B["oci_free_tier_report.py<br/>on your OCI VM"]
     B -->|stdout| C["Hermes cron<br/>--no-agent"]
     C --> D["Telegram · Discord · WhatsApp<br/>Slack · Signal · Matrix"]
+    E["oci_free_tier_guard.py<br/>optional, hourly"] -.->|resize / stop A1,<br/>only when needed| A
+    E -.->|stdout| C
 ```
 
 Every morning Hermes runs the script as a `--no-agent` cron job. The script signs in as the VM itself, reads your
 tenancy's usage through the OCI SDK, compares it with the Always Free limits and prints a table. Hermes delivers that
 text unchanged — no LLM call, no API key on disk, nothing to pay.
+
+The optional guard is a second script on the same VM, run hourly the same way. It prints nothing while A1 stays
+inside the free quota; only when the month-end projection passes it does it resize or stop the instances you allowed
+and tell you what it did.
 
 ## Contents
 - [Quick start](#quick-start) · [How it works](#how-it-works)
@@ -187,9 +202,13 @@ hermes [-p <profile>] skills update oci-free-tier-report    # fetch it
 bash <skill folder>/install.sh --profile <profile> --deliver <same target>   # deploy the new script
 ```
 
-Re-running the installer keeps the cron job, its schedule and your settings (language, format, timezone).
-Or just ask your bot: "update the OCI free tier report skill". From a git checkout: `git pull`, then re-run
-`install.sh` the same way.
+`skills update` alone only refreshes the skill folder; the cron job runs the copy in the profile's `scripts/`, so
+re-run the installer. It keeps the cron job, its schedule and your settings (language, format, timezone).
+Or just ask your bot: "update the OCI free tier report" — it does both steps. From a git checkout: `git pull`, then
+re-run `install.sh` the same way.
+
+Installed the guard too? Same two steps with `oci-free-tier-guard` and its own `install.sh` (or ask the bot to
+update the guard); its mode and settings are kept.
 
 **Upgrading from an early clone install** (in `~/.local/src/hermes-oci-free-tier-report`): install the
 skill as above, re-run its `install.sh` with the same `--deliver`, then delete the old clone. If your bot copied
@@ -222,7 +241,8 @@ OCID → Copy.)
    ```
    (For a named profile the script lives in `~/.hermes/profiles/<name>/scripts/`.)
 
-Dynamic groups and policies are free, and everything is read-only.
+Dynamic groups and policies are free. These two read-only statements are all the report needs; the optional guard
+needs one more ([see below](#optional-auto-downscale-guard)).
 
 **Skipped this step?** Nothing breaks. Until the permissions exist, the daily message is this setup guide (instance
 OCID filled in, policy lines in copyable code blocks). Once the policy exists, the next run sends the normal report
@@ -337,8 +357,14 @@ percentile CPU is under 20% — and for A1 shapes, memory too. The report shows 
 qualify. It needs the Oracle Cloud Agent's monitoring plugin, which is on by default on Oracle images.
 
 **Does this cost anything to run?**
-No. It makes a few dozen read-only API calls per day. OCI API calls are free; the only metered part is Object
-Storage requests (50,000/month free), and the report uses one or two per bucket per day. No LLM tokens are used.
+No. The report makes a few dozen read-only API calls a day, the optional guard a few hundred (it runs hourly). OCI
+API calls are free; the only metered part is Object Storage requests (50,000/month free), and the report uses one or
+two per bucket per day. No LLM tokens are used.
+
+**Can it shut down or shrink my VM automatically?**
+The report never changes anything. The optional [guard](#optional-auto-downscale-guard) can: in `downscale` mode it
+resizes A1 Flex to what the remaining free quota pays for, in `stop` mode it soft-stops A1 instances. It starts in
+`dry-run`, acts only when the month-end projection passes the quota, and only on the instances you list.
 
 **Can I run it outside Oracle Cloud?**
 No — it must run on the OCI compute instance it monitors (see [How authentication works](#how-authentication-works)).
@@ -369,7 +395,7 @@ override it). `install.sh --format` and `--timezone` write it for you.
 ## Manage
 
 ```bash
-hermes cron list                       # find the job id ("OCI Always Free Usage Report")
+hermes cron list                       # job ids: "OCI Always Free Usage Report" (+ "OCI Free Tier Guard")
 hermes cron run <id>                   # send a report now
 hermes cron edit <id> --schedule "0 9 * * *" --deliver discord:123
 hermes cron pause <id>
@@ -377,14 +403,21 @@ bash <skill folder>/install.sh --uninstall
 hermes skills uninstall oci-free-tier-report
 ```
 
+Remove the guard first if you installed it: `bash <guard skill folder>/install.sh --uninstall`, then
+`hermes skills uninstall oci-free-tier-guard`, and delete its policy statements in the OCI Console.
+
 Prefix with `hermes -p <profile>` for a named profile. To update, see [Update](#update).
 
 ## How authentication works
 
 Every OCI VM can reach its Instance Metadata Service at `169.254.169.254`. The OCI SDK fetches the VM's
 auto-rotated X.509 certificate from it, exchanges that for a short-lived security token (≈20 minutes) and signs
-each API call with it — no API keys, no config file. The dynamic group says "this VM", the policy says "may read".
-Keep that policy **read-only**: any process on the VM can obtain the same token.
+each API call with it — no API keys, no config file. The dynamic group says "this VM", the policy says what it may
+do. The report needs only **read**.
+
+Any process on the VM can obtain the same token. So if you add the guard's statements, anything running on this VM
+could resize or stop instances in your tenancy (not create, terminate or delete them). Add them only if you trust
+what runs on the VM, and keep everything else read-only.
 
 ## License
 

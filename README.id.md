@@ -25,17 +25,22 @@ ditagih, jam OCPU dan memori Ampere A1, block volume dan Object Storage, transfe
 di-reclaim karena idle, load balancer, dan Autonomous Database — lalu memberi tahu kalau ada yang mendekati atau
 melewati batas gratis.
 
+Skill kedua yang opsional, **guard**, melangkah lebih jauh: kalau A1 hampir lewat kuota gratis, dia bisa mengecilkan
+atau mematikan VM untukmu ([Opsional: guard auto-downscale](#opsional-guard-auto-downscale)).
+
 - **Gratis, tanpa token AI.** Cron job Hermes `--no-agent`: murni panggilan OCI SDK, tanpa LLM.
 - **Tabel asli di chat.** Tabel asli di Telegram (Bot API Rich Messages), tabel rata di Slack, Signal, dan Matrix,
   tabel monospace selebar layar HP di Discord dan WhatsApp — dipilih otomatis sesuai tujuan pengiriman.
-- **Tanpa API key di disk.** Login sebagai VM itu sendiri (OCI instance principal) dengan policy hanya-baca.
+- **Tanpa API key di disk.** Login sebagai VM itu sendiri (OCI instance principal). Laporan cukup dengan policy
+  hanya-baca; guard opsional menambah satu statement yang cakupannya sempit.
 - **Peringatan dengan bahasa sederhana.** Bagian yang aman tidak diberi catatan; yang mendekati atau lewat batas
   diberi penjelasan artinya dan apa yang jangan dilakukan.
 - **Bahasamu sendiri.** Bawaan bahasa Inggris (default) dan Bahasa Indonesia; bot Hermes bisa menambahkan bahasa
   lain sekali saat install — laporan hariannya tetap tanpa AI.
-- **Install dengan satu kalimat, update dengan satu perintah.** Dikemas sebagai skill Hermes: bot meng-install-nya
-  lewat `hermes skills install` dan memasang cron job di chat yang sedang dipakai; `hermes skills update` menjaganya
-  tetap terbaru.
+- **Rem darurat opsional.** Skill guard bisa mengecilkan atau mematikan A1 sebelum kena tagihan. Default-nya
+  dry-run, dan hanya menyentuh VM yang kamu daftarkan.
+- **Install dengan satu kalimat, update juga satu kalimat.** Dikemas sebagai skill Hermes: bot meng-install-nya
+  lewat `hermes skills install`, memasang cron job di chat yang sedang dipakai, dan meng-update-nya kalau kamu minta.
 
 > **Syarat: hanya berjalan di compute instance OCI.** Hermes harus terpasang di VM Oracle Cloud yang ingin dipantau
 > (Ampere A1 Flex atau VM.Standard.E2.1.Micro, Ubuntu / Oracle Linux). Laporan login sebagai VM tersebut lewat
@@ -50,8 +55,11 @@ hermes skills install pgen0x/hermes-oci-free-tier-report/skills/oci-free-tier-re
 ```
 
 Lalu bilang ke bot Hermes kamu: **"pasang OCI free tier report di chat ini, bahasa Indonesia"**. Bot menjalankan
-installer bawaan skill, membuat cron job harian jam 07:00, dan mengirim laporan pertama. Update nanti dengan
-`hermes skills update oci-free-tier-report`.
+installer bawaan skill, membuat cron job harian jam 07:00, dan mengirim laporan pertama. Untuk update nanti, cukup
+bilang **"update OCI free tier report"**.
+
+Opsional: mau A1 dikecilkan atau dimatikan otomatis sebelum kena tagihan? Pasang juga
+[guard](#opsional-guard-auto-downscale).
 
 ## Cara kerja
 
@@ -60,11 +68,17 @@ flowchart LR
     A["OCI APIs<br/>Usage · Compute · Storage<br/>Monitoring · Network"] -->|instance principal,<br/>read-only| B["oci_free_tier_report.py<br/>di VM OCI kamu"]
     B -->|stdout| C["Hermes cron<br/>--no-agent"]
     C --> D["Telegram · Discord · WhatsApp<br/>Slack · Signal · Matrix"]
+    E["oci_free_tier_guard.py<br/>opsional, tiap jam"] -.->|resize / stop A1,<br/>hanya kalau perlu| A
+    E -.->|stdout| C
 ```
 
 Setiap pagi Hermes menjalankan script sebagai cron job `--no-agent`. Script login sebagai VM itu sendiri, membaca
 pemakaian tenancy lewat OCI SDK, membandingkannya dengan batas Always Free, lalu mencetak tabel. Hermes mengirim teks
 itu apa adanya — tanpa LLM, tanpa API key di disk, tanpa biaya.
+
+Guard opsional adalah script kedua di VM yang sama, dijalankan tiap jam dengan cara yang sama. Dia diam selama A1
+masih di dalam kuota gratis; baru kalau proyeksi akhir bulan lewat kuota, dia mengecilkan atau mematikan instance
+yang kamu izinkan dan memberi tahu apa yang dilakukan.
 
 ## Daftar isi
 - [Mulai cepat](#mulai-cepat) · [Cara kerja](#cara-kerja)
@@ -189,9 +203,13 @@ hermes [-p <profile>] skills update oci-free-tier-report    # ambil versi baru
 bash <folder skill>/install.sh --profile <profile> --deliver <target yang sama>   # pasang script baru
 ```
 
-Menjalankan ulang installer tetap mempertahankan cron job, jadwal, dan pengaturanmu (bahasa, format, zona waktu).
-Atau cukup minta ke bot: "update skill OCI free tier report". Dari git checkout: `git pull`, lalu jalankan ulang
-`install.sh` dengan cara yang sama.
+`skills update` saja hanya memperbarui folder skill; cron job menjalankan salinan di `scripts/` milik profile, jadi
+jalankan ulang installer. Cron job, jadwal, dan pengaturanmu (bahasa, format, zona waktu) tetap dipertahankan.
+Atau cukup minta ke bot: "update OCI free tier report" — dia mengerjakan kedua langkah. Dari git checkout:
+`git pull`, lalu jalankan ulang `install.sh` dengan cara yang sama.
+
+Pasang guard juga? Dua langkah yang sama dengan `oci-free-tier-guard` dan `install.sh` miliknya (atau minta bot
+meng-update guard); mode dan pengaturannya tetap dipertahankan.
 
 **Upgrade dari install lama via clone** (di `~/.local/src/hermes-oci-free-tier-report`):
 install skill seperti di atas, jalankan ulang `install.sh`-nya dengan `--deliver` yang sama, lalu hapus clone lama.
@@ -224,7 +242,8 @@ akan meneruskannya ke kamu. (Kalau mau mencari sendiri: Console → Compute → 
    ```
    (Untuk profile bernama, script ada di `~/.hermes/profiles/<nama>/scripts/`.)
 
-Dynamic group dan policy gratis, dan semuanya hanya-baca.
+Dynamic group dan policy gratis. Dua statement hanya-baca ini sudah cukup untuk laporan; guard opsional butuh satu
+lagi ([lihat di bawah](#opsional-guard-auto-downscale)).
 
 **Terlewat langkah ini?** Tidak ada yang rusak. Selama izinnya belum ada, pesan harian berisi panduan setup ini
 (OCID instance sudah terisi, baris policy di code block yang bisa disalin). Begitu policy dibuat, run berikutnya
@@ -340,9 +359,15 @@ dan memberi peringatan sebelum kamu memenuhi kriteria itu. Butuh plugin monitori
 secara default di image Oracle.
 
 **Apakah menjalankan ini ada biayanya?**
-Tidak. Hanya beberapa puluh panggilan API hanya-baca per hari. Panggilan API OCI gratis; satu-satunya yang dihitung
-adalah request Object Storage (gratis 50.000/bulan), dan laporan ini memakai satu atau dua per bucket per hari.
-Tidak ada token LLM yang dipakai.
+Tidak. Laporan membuat beberapa puluh panggilan API hanya-baca per hari, guard opsional beberapa ratus (jalan tiap
+jam). Panggilan API OCI gratis; satu-satunya yang dihitung adalah request Object Storage (gratis 50.000/bulan), dan
+laporan ini memakai satu atau dua per bucket per hari. Tidak ada token LLM yang dipakai.
+
+**Bisa mematikan atau mengecilkan VM secara otomatis?**
+Laporan tidak pernah mengubah apa pun. [Guard](#opsional-guard-auto-downscale) yang opsional bisa: mode `downscale`
+mengecilkan A1 Flex ke ukuran yang masih tertutup sisa kuota gratis, mode `stop` mematikan (soft-stop) instance A1.
+Default-nya `dry-run`, hanya bertindak kalau proyeksi akhir bulan lewat kuota, dan hanya pada instance yang kamu
+daftarkan.
 
 **Bisa dijalankan di luar Oracle Cloud?**
 Tidak — harus berjalan di compute instance OCI yang dipantau (lihat [Cara kerja autentikasi](#cara-kerja-autentikasi)).
@@ -374,13 +399,16 @@ variable lebih diutamakan). `install.sh --lang`, `--format`, dan `--timezone` me
 ## Mengelola
 
 ```bash
-hermes cron list                       # cari id job ("OCI Always Free Usage Report")
+hermes cron list                       # id job: "OCI Always Free Usage Report" (+ "OCI Free Tier Guard")
 hermes cron run <id>                   # kirim laporan sekarang
 hermes cron edit <id> --schedule "0 9 * * *" --deliver discord:123
 hermes cron pause <id>
 bash <folder skill>/install.sh --uninstall
 hermes skills uninstall oci-free-tier-report
 ```
+
+Kalau guard terpasang, hapus dulu: `bash <folder skill guard>/install.sh --uninstall`, lalu
+`hermes skills uninstall oci-free-tier-guard`, dan hapus statement policy-nya di OCI Console.
 
 Tambahkan `hermes -p <profile>` untuk profile bernama. Untuk update, lihat [Update](#update).
 
@@ -389,8 +417,11 @@ Tambahkan `hermes -p <profile>` untuk profile bernama. Untuk update, lihat [Upda
 Setiap VM OCI bisa mengakses Instance Metadata Service di `169.254.169.254`. OCI SDK mengambil sertifikat X.509
 milik VM dari sana (dirotasi otomatis), menukarnya dengan security token berumur pendek (±20 menit), lalu
 menandatangani setiap panggilan API dengan token itu — tanpa API key, tanpa file config. Dynamic group berarti
-"VM ini", policy berarti "boleh membaca". Jaga policy itu tetap **hanya-baca**: semua proses di VM bisa mendapatkan
-token yang sama.
+"VM ini", policy menentukan apa yang boleh dilakukan. Laporan cukup dengan izin **baca**.
+
+Semua proses di VM bisa mendapatkan token yang sama. Jadi kalau kamu menambahkan statement guard, apa pun yang jalan
+di VM ini bisa mengubah ukuran atau mematikan instance di tenancy-mu (bukan membuat, menghentikan permanen, atau
+menghapus). Tambahkan hanya kalau kamu percaya dengan semua yang jalan di VM itu, dan biarkan sisanya hanya-baca.
 
 ## Lisensi
 
