@@ -56,7 +56,7 @@ import string
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
 
 
 _CONF: dict[str, str] = {}       # oci_free_tier_report.conf

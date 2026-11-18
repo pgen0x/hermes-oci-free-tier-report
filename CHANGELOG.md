@@ -4,7 +4,7 @@ Versions follow [Semantic Versioning](https://semver.org/). Until 1.0.0 the proj
 minor versions may change paths or options. The version lives in four places that must move together:
 `version:` in both `skills/*/SKILL.md` and `__version__` in both scripts.
 
-## [Unreleased]
+## [0.2.0] — 2026-11-18
 
 ### Added
 - `oci-free-tier-guard`, an optional second skill: an hourly no-agent cron that projects A1 OCPU-h / GB-h to the

@@ -1,7 +1,7 @@
 ---
 name: oci-free-tier-report
 description: "Daily OCI Always Free usage report as a no-agent cron."
-version: 0.1.4
+version: 0.2.0
 author: pgen0x
 license: MIT
 platforms: [linux]
