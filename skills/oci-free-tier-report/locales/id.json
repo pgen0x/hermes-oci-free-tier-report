@@ -68,7 +68,6 @@
   "note.cost.charged": "Ada resource berbayar yang berjalan — baris di atas menunjukkan service mana yang menagih.",
   "note.cost.ok": "Biaya dari Usage API Oracle (datanya telat beberapa jam). 0,00 berarti kamu tidak membayar apa pun.",
   "note.a1_hours": "Terpakai {used} / {quota_ocpu} OCPU-h dan {used_gb} / {quota_gb} GB-h (kuota {account}); akhir bulan ~{projected} OCPU-h. Reset setiap tanggal 1.",
-  "note.a1_hours.payg_doubt": "↳ Di atas kuota Free Tier 1.500 / 9.000, dan halaman Oracle tidak sepakat soal kuota PAYG. Kalau Biaya suatu saat menunjukkan tagihan A1, kecilkan ke 2 OCPU / 12 GB.",
   "note.a1_hours.unknown": "↳ Jenis akun tidak diketahui (subscription tidak terbaca), jadi kuota Free Tier yang lebih ketat dipakai; PAYG mendapat 3.000 / 18.000.",
   "note.storage.over": "Total volume {total} GB, lewat {over} GB dari batas gratis 200 GB — hapus atau kecilkan salah satu volume.",
   "note.storage.full": "200 dari 200 GB terpakai — jangan tambah volume atau perbesar boot volume.",

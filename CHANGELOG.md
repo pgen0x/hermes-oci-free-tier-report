@@ -5,6 +5,13 @@ minor versions may change paths or options. The version lives in two places that
 `version:` in `skills/oci-free-tier-report/SKILL.md` and `__version__` in
 `skills/oci-free-tier-report/oci_free_tier_report.py`.
 
+## [0.1.4] — 2026-11-18
+
+### Fixed
+- PAYG A1 quota is no longer treated as uncertain. Oracle's billing rate card (SKUs B93297 / B93298) prices
+  Pay As You Go A1 at $0 up to 3,000 OCPU-h / 18,000 GB-h, so PAYG A1 hours rows use the normal thresholds instead
+  of ⚪, and the "Oracle's pages disagree" follow-up note is gone (#12).
+
 ## [0.1.3] — 2026-11-17
 
 ### Changed

@@ -88,8 +88,8 @@ On Telegram every section arrives as a native table (this tenancy is Pay As You 
 
 | A1 hours | Used | Proj. | Limit | Status |
 |:---|---:|---:|---:|:---:|
-| OCPU-h | 637 | 2,077 | 3,000 | ⚪ |
-| GB-h | 3,824 | 12,464 | 18,000 | ⚪ |
+| OCPU-h | 637 | 2,077 | 3,000 | ✅ |
+| GB-h | 3,824 | 12,464 | 18,000 | ✅ |
 
 …plus **Cost**, **Storage**, **Network**, **Idle** and **Other** tables, then a footer that only explains what needs
 attention:
@@ -98,12 +98,9 @@ attention:
 >
 > 🟠 **Compute**: A1 at the free cap (4 OCPU / 24 GB) — still free; a new or bigger A1 would be billed.
 >
-> ⚪ **A1 hours**: Used 637 / 3,000 OCPU-h and 3,824 / 18,000 GB-h (PAYG quota); the month ends at ~2,077 OCPU-h. Resets on the 1st.<br>
-> ↳ Above the Free Tier 1,500 / 9,000, and Oracle's pages disagree on the PAYG quota. If Cost ever shows A1 charges, shrink to 2 OCPU / 12 GB.
->
 > 🟠 **Storage**: 200 of 200 GB used — don't add volumes or enlarge the boot volume.
 >
-> ✅ <70%  🟡 70-90%  🟠 ≥90%  🔴 over  ⚪ see note
+> ✅ <70%  🟡 70-90%  🟠 ≥90%  🔴 over
 
 The `mono` format (Discord, WhatsApp) looks like:
 
@@ -114,8 +111,8 @@ A1 RAM (GB)      24    24 🟠
 E2.1.Micro VMs    0     2 ✅
 
 A1 HOURS  Used  Proj.  Limit
-OCPU-h     637  2,077  3,000 ⚪
-GB-h     3,824 12,464 18,000 ⚪
+OCPU-h     637  2,077  3,000 ✅
+GB-h     3,824 12,464 18,000 ✅
 ```
 
 ## Install with one message to your Hermes bot
@@ -286,8 +283,10 @@ The report reads it from your tenancy subscription and shows it in the header (`
 - **Pay As You Go**: "Each paid tenancy gets the first 3,000 OCPU hours and 18,000 GB hours per month for free"
   ([Arm pricing](https://www.oracle.com/cloud/compute/arm/pricing/)) — 4 OCPU / 24 GB stays free.
 
-Oracle's Always Free page also says "All tenancies get the first 1,500…", so for PAYG accounts above 1,500 / 9,000 the
-A1 hours rows show ⚪ with a note. When the type is unknown the report uses the stricter Free Tier quota.
+Oracle's Always Free page also says "All tenancies get the first 1,500…", but billing follows the
+[price list](https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?partNumber=B93297): for Pay As You Go the
+A1 OCPU SKU is $0 up to 3,000 OCPU-hours, then $0.01 per OCPU-hour (memory: $0 up to 18,000 GB-hours, then $0.0015).
+When the type is unknown the report uses the stricter Free Tier quota.
 
 **Will I be charged if my Ampere A1 shows 4/4 OCPU?**
 On a PAYG account, no: 🟠 means *at* the limit, not over it. A 4 OCPU / 24 GB A1 running 24/7 uses at most 2,976

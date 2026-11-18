@@ -1,7 +1,7 @@
 ---
 name: oci-free-tier-report
 description: "Daily OCI Always Free usage report as a no-agent cron."
-version: 0.1.3
+version: 0.1.4
 author: pgen0x
 license: MIT
 platforms: [linux]
@@ -127,9 +127,8 @@ cron jobs in that profile lose the header too — say so).
 - On PAYG, `A1 OCPU 4/4`, `A1 RAM (GB) 24/24` and `Block+boot (GB) 200/200` show 🟠 but are **still free** — at, not
   over, the limit. A 4 OCPU / 24 GB A1 running 24/7 uses at most 2,976 OCPU-h and 17,856 GB-h in a 31-day month.
   On Free Tier the same A1 is 🔴: tell the user to shrink it to 2 OCPU / 12 GB (or upgrade to PAYG).
-- ⚪ on the A1 hours rows (PAYG only) = above the Free Tier 1,500 / 9,000 but inside the paid 3,000 / 18,000. Oracle's
-  pages disagree on whether PAYG gets the larger quota, so the user should watch the Cost rows; if A1 charges appear,
-  shrink to 2 OCPU / 12 GB.
+- The PAYG A1 quota is Oracle's billing rate card: $0 up to 3,000 OCPU-h / 18,000 GB-h, then $0.01 per OCPU-h and
+  $0.0015 per GB-h. Above 1,500 / 9,000 on PAYG is normal and free.
 - 🔴 = over the free limit → tell the user what to delete or shrink.
 - Idle 🟠 = 7-day CPU p95 < 20% (and RAM < 20% on A1): Free Tier (non-upgraded) accounts can have the VM reclaimed.
 - The **Notes** footer only lists sections that need attention; no notes means everything is green.
