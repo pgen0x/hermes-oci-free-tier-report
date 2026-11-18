@@ -90,8 +90,8 @@ Dengan `--lang id`, setiap bagian tampil sebagai tabel asli di Telegram (tenancy
 
 | Jam A1 | Terpakai | Proyeksi | Batas | Status |
 |:---|---:|---:|---:|:---:|
-| OCPU-h | 637 | 2.077 | 3.000 | ⚪ |
-| GB-h | 3.824 | 12.464 | 18.000 | ⚪ |
+| OCPU-h | 637 | 2.077 | 3.000 | ✅ |
+| GB-h | 3.824 | 12.464 | 18.000 | ✅ |
 
 …ditambah tabel **Biaya**, **Storage**, **Jaringan**, **Idle**, dan **Lainnya**, lalu footer yang hanya menjelaskan
 hal yang perlu diperhatikan:
@@ -100,12 +100,9 @@ hal yang perlu diperhatikan:
 >
 > 🟠 **Compute**: A1 di batas gratis (4 OCPU / 24 GB) — masih gratis; A1 baru atau yang lebih besar akan ditagih.
 >
-> ⚪ **Jam A1**: Terpakai 637 / 3.000 OCPU-h dan 3.824 / 18.000 GB-h (kuota PAYG); akhir bulan ~2.077 OCPU-h. Reset setiap tanggal 1.<br>
-> ↳ Di atas kuota Free Tier 1.500 / 9.000, dan halaman Oracle tidak sepakat soal kuota PAYG. Kalau Biaya suatu saat menunjukkan tagihan A1, kecilkan ke 2 OCPU / 12 GB.
->
 > 🟠 **Storage**: 200 dari 200 GB terpakai — jangan tambah volume atau perbesar boot volume.
 >
-> ✅ <70%  🟡 70-90%  🟠 ≥90%  🔴 lewat batas  ⚪ lihat catatan
+> ✅ <70%  🟡 70-90%  🟠 ≥90%  🔴 lewat batas
 
 Format `mono` (Discord, WhatsApp) tampil seperti ini:
 
@@ -116,8 +113,8 @@ A1 RAM (GB)         24    24 🟠
 VM E2.1.Micro        0     2 ✅
 
 JAM A1 Terpakai Proyeksi  Batas
-OCPU-h      637    2.077  3.000 ⚪
-GB-h      3.824   12.464 18.000 ⚪
+OCPU-h      637    2.077  3.000 ✅
+GB-h      3.824   12.464 18.000 ✅
 ```
 
 ## Install dengan satu pesan ke bot Hermes
@@ -288,9 +285,10 @@ kalau tidak bisa dibaca). Oracle memberi dua jatah Ampere A1 yang berbeda:
 - **Pay As You Go**: "Each paid tenancy gets the first 3,000 OCPU hours and 18,000 GB hours per month for free"
   ([harga Arm](https://www.oracle.com/cloud/compute/arm/pricing/)) — 4 OCPU / 24 GB tetap gratis.
 
-Halaman Always Free Oracle juga menulis "All tenancies get the first 1,500…", jadi untuk akun PAYG di atas
-1.500 / 9.000 baris jam A1 tampil ⚪ dengan catatan. Kalau jenis akun tidak diketahui, laporan memakai kuota Free Tier
-yang lebih ketat.
+Halaman Always Free Oracle juga menulis "All tenancies get the first 1,500…", tapi tagihan mengikuti
+[daftar harga](https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?partNumber=B93297): untuk Pay As You Go,
+SKU OCPU A1 bernilai $0 sampai 3.000 OCPU-jam, lalu $0.01 per OCPU-jam (memori: $0 sampai 18.000 GB-jam, lalu $0.0015).
+Kalau jenis akun tidak diketahui, laporan memakai kuota Free Tier yang lebih ketat.
 
 **Apakah saya ditagih kalau Ampere A1 menunjukkan 4/4 OCPU?**
 Di akun PAYG, tidak: 🟠 berarti *tepat di* batas, bukan lewat. A1 4 OCPU / 24 GB yang menyala 24/7 memakai paling

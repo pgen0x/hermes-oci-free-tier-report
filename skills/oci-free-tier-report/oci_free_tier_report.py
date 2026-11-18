@@ -56,7 +56,7 @@ import string
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 
 _CONF: dict[str, str] = {}       # oci_free_tier_report.conf
@@ -113,8 +113,10 @@ LIMITS = {
 # Ampere A1 monthly allowance by account type (OCPU, GB, OCPU-hours, GB-hours).
 # Always Free tenancies: 1,500 OCPU-h / 9,000 GB-h ("equivalent to 2 OCPUs and 12 GB"), per
 # https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
-# Paid tenancies: "the first 3,000 OCPU hours and 18,000 GB hours per month for free", per
-# https://www.oracle.com/cloud/compute/arm/pricing/ . An unknown account type gets the stricter free values.
+# Paid (Pay As You Go) tenancies: 3,000 OCPU-h / 18,000 GB-h, per Oracle's billing rate card — SKUs B93297 / B93298
+# are $0 for 0-3,000 OCPU-h / 0-18,000 GB-h, then $0.01 / OCPU-h and $0.0015 / GB-h:
+# https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?partNumber=B93297 (also the Arm pricing page).
+# An unknown account type gets the stricter free values.
 A1_ALLOWANCE = {"payg": (4, 24, 3000, 18000), "free": (2, 12, 1500, 9000)}
 FREE_SHAPES = {"VM.Standard.A1.Flex", "VM.Standard.E2.1.Micro"}
 LIVE_STATES = {"RUNNING", "STARTING", "PROVISIONING", "STOPPING"}
@@ -200,7 +202,6 @@ EN: dict[str, str] = {
     "note.cost.charged": "Something billable is running — the rows above show which service is charging you.",
     "note.cost.ok": "Billed cost from Oracle's Usage API (data lags a few hours). 0.00 means you are not paying anything.",
     "note.a1_hours": "Used {used} / {quota_ocpu} OCPU-h and {used_gb} / {quota_gb} GB-h ({account} quota); the month ends at ~{projected} OCPU-h. Resets on the 1st.",
-    "note.a1_hours.payg_doubt": "↳ Above the Free Tier 1,500 / 9,000, and Oracle's pages disagree on the PAYG quota. If Cost ever shows A1 charges, shrink to 2 OCPU / 12 GB.",
     "note.a1_hours.unknown": "↳ Account type unknown (subscription not readable), so the stricter Free Tier quota is used; PAYG gets 3,000 / 18,000.",
     "note.storage.over": "Volumes total {total} GB, {over} GB over the free 200 GB — delete or shrink a volume.",
     "note.storage.full": "200 of 200 GB used — don't add volumes or enlarge the boot volume.",
@@ -594,9 +595,6 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
     ):
         proj = used + live * hours_left
         status = level(proj, LIMITS[key])
-        free_quota = A1_ALLOWANCE["free"][2 if key == "a1_ocpu_hours" else 3]
-        if ctx.account == "payg" and status == "ok" and proj > free_quota:
-            status = "info"  # within the paid allowance, above the Always Free one — see note
         hours.rows.append(
             Row(
                 [label, num(used), num(proj), num(LIMITS[key])],
@@ -619,8 +617,6 @@ def collect_cost(ctx: Ctx, rep: Report) -> None:
         max=num(max_ocpu),
         **a1_limits(),
     )
-    if any(r.status == "info" for r in hours.rows):
-        hours.note += "\n" + T("note.a1_hours.payg_doubt")
     if ctx.account == "unknown":
         hours.note += "\n" + T("note.a1_hours.unknown")
         hours.rows[0].status = "info" if hours.rows[0].status == "ok" else hours.rows[0].status
